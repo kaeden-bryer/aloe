@@ -73,8 +73,8 @@ gh repo create aloe --private --source=. --push    # or create it on github.com 
 - [x] **[you]** Create an Anthropic API key in the Claude Console with a monthly spend limit; put it in `.env` as `ANTHROPIC_API_KEY`
 - [x] **[you]** `docker build -t aloe-sandbox docker/sandbox`
 - [x] **[you]** Fork a small transit or climate repo with a working test command to be the demo project; set `GITHUB_DEMO_REPO` and a fine-grained `GITHUB_TOKEN` (access to that fork only) in `.env`
-- [ ] [claude] Point one seeded project's `repoUrl` at the fork and write 3–5 small, real `TaskSpec`s for it (tests, docs, one interface change to force an escalation)
-- [ ] [claude] Run one task end to end with `--provider claude-sdk`; fix whatever breaks
+- [x] [claude] Point one seeded project's `repoUrl` at the fork and write 3–5 small, real `TaskSpec`s for it (tests, docs, one interface change to force an escalation): project `ccf` (Cloud Carbon Footprint), image `aloe-sandbox-ccf` (`docker/sandbox-ccf/build.sh`)
+- [x] [claude] Run one task end to end with `--provider claude-sdk`; fix whatever breaks (CCF task 2: code ~65 s, verify ~40 s, merged)
 - [ ] [claude] Hidden tests: store them on the server per project, hand them only to verify leases, run them in the sandbox
 - [ ] [claude] Demo fallback: `--provider local-claude` (your own `claude` login, your machine only)
 
