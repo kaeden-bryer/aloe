@@ -4,7 +4,7 @@
  * slider is debounced so dragging it doesn't fire a request per step.
  */
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import type { CauseId, DonorSettings, Me } from "@aloe/core/contracts";
 import { useCauses, useMe, useResetDemo, useSaveSettings } from "../api/hooks";
 import { ScheduleOptions } from "../components/ScheduleOptions";
@@ -112,7 +112,7 @@ function SettingsForm({ me }: { me: Me }) {
       <div className="setting-row">
         <div>
           <div className="t">Weekly report email</div>
-          <div className="d">What your agent shipped, plus what Aloe did as a whole. Only sent in weeks your agent worked.</div>
+          <div className="d">What your agent shipped, plus what Aloe did as a whole. Only sent in weeks your agent worked. <Link to="/settings/weekly-email">Preview this week's email</Link></div>
         </div>
         <Switch on={s.weeklyEmail} label="Weekly report email" onToggle={() => save({ weeklyEmail: !s.weeklyEmail }, "Notification settings saved")} />
       </div>

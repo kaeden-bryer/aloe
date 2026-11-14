@@ -230,6 +230,10 @@ function route(method: string, url: URL, body: unknown): Reply {
     return ok(me());
   }
   if (method === "GET" && path === "/api/me/dashboard") return ok(buildMockDashboard());
+  // Mock mode has no mail provider, same as a fresh server without RESEND_API_KEY.
+  if (method === "POST" && path === "/api/me/weekly-email/send") {
+    return { status: 503, json: { error: "Email isn't set up yet: add RESEND_API_KEY to .env to send real emails.", code: "not_configured" } };
+  }
   if (method === "GET" && path === "/api/decisions") return ok(openDecisions());
   if ((m = path.match(/^\/api\/decisions\/([^/]+)\/resolve$/)) && method === "POST") {
     const p = demoProjects.find((x) => `${x.id}-d1` === m![1]);

@@ -18,6 +18,7 @@ import {
   ProjectDetail,
   ProjectSummary,
   type CauseId,
+  WeeklyEmailSendResponse,
   type DonorSettings,
 } from "@aloe/core/contracts";
 
@@ -86,5 +87,6 @@ export const api = {
   decisions: () => request("GET", "/api/decisions?status=open", z.array(Decision)),
   resolveDecision: (id: string, optionId: string, note?: string) =>
     request("POST", `/api/decisions/${encodeURIComponent(id)}/resolve`, Decision, { optionId, note }),
+  sendWeeklyEmail: () => request("POST", "/api/me/weekly-email/send", WeeklyEmailSendResponse),
   resetDemo: () => request("POST", "/api/demo/reset", Ok),
 };
