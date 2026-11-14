@@ -48,6 +48,7 @@ Real auth (GitHub sign-in) replaces the header later; routes stay the same.
 | GET | `/api/causes` | | `Cause[]` |
 | GET | `/api/projects?cause=<CauseId>` | | `ProjectSummary[]` |
 | GET | `/api/projects/:id` | | `ProjectDetail` |
+| GET | `/api/projects/:id/staging` | | `StagingStatus` (publish status of merged tasks on the fork's `aloe/staging` branch, plus the PR url; `enabled: false` when `ALOE_PUBLISH_STAGING` is off) |
 | POST | `/api/projects/:id/back` | | `{ ok: true }` |
 | DELETE | `/api/projects/:id/back` | | `{ ok: true }` |
 | GET | `/api/me` | | `Me` |
