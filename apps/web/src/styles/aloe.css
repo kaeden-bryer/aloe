@@ -489,6 +489,7 @@ input[type="range"] { accent-color: var(--green); }
 .share-sub { margin-top: 8px; font-size: 15px; color: rgba(255, 255, 255, 0.78); }
 .share-chips { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
 .share-chips span { padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.16); font-size: 12px; font-weight: 500; }
+.share-image { display: block; margin-top: 16px; width: 100%; height: auto; aspect-ratio: 1200 / 630; border-radius: 14px; }
 .post-label { margin-top: 16px; font-size: 13px; font-weight: 500; color: var(--muted); }
 .post-text { margin: 6px 0 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--page-soft); font-size: 14px; line-height: 1.5; color: var(--text); user-select: all; }
 .share-actions { margin-top: 14px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }

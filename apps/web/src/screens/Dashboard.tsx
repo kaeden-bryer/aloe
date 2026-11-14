@@ -12,6 +12,7 @@ import { ACTIVITY_VIEW, KIND_COLORS, projectColor } from "../lib/catalog";
 import { isOnboarded } from "../lib/donor";
 import { formatWhen } from "../lib/format";
 import { buildSharePost } from "../lib/share";
+import { cardDataFrom } from "../lib/shareCard";
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -30,6 +31,8 @@ export function Dashboard() {
     () => dash && buildSharePost(dash.landed, (id) => projects.find((p) => p.id === id)?.cause, causes),
     [dash, projects, causes],
   );
+  // Data for the generated share image (memoised so the dialog doesn't re-render the PNG needlessly).
+  const shareCard = useMemo(() => (dash ? cardDataFrom(dash) : undefined), [dash]);
 
   return (
     <div className="page" style={{ maxWidth: 1160, paddingTop: 48 }}>
@@ -78,7 +81,7 @@ export function Dashboard() {
         </div>
       )}
 
-      {shareOpen && share && <ShareDialog post={share} onClose={closeShare} />}
+      {shareOpen && share && <ShareDialog post={share} card={shareCard} onClose={closeShare} />}
     </div>
   );
 }
