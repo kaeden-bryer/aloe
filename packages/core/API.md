@@ -1,7 +1,7 @@
 # Aloe HTTP API (contract)
 
 All bodies are JSON and validated with the Zod schemas in `src/contracts.ts`.
-Errors: `{ error, code }` (`ApiError`) with status 400 / 401 / 404 / 409 / 503 (`not_configured`).
+Errors: `{ error, code }` (`ApiError`) with status 400 / 401 (`unauthorized`, no session) / 403 (`forbidden`, signed in but not allowed) / 404 / 409 / 503 (`not_configured`).
 
 ### Per-task turn cap
 
@@ -55,10 +55,10 @@ worktree, runs `command` in the sandbox, and reports `hiddenTestsPassed`
 (`true` with note "no hidden tests" when none were sent). A `false` never
 merges: routing sends it to `retry`, or to a maintainer after 3 attempts.
 
-## Maintainer API — `x-aloe-maintainer: <key>` header
+## Maintainer API: hidden tests — session of a maintainer of `:id`
 
-Key = env `ALOE_MAINTAINER_TOKEN` (default `aloe-maintainer-demo`), constant-time
-compared; real maintainer accounts replace it later. Not donor-header auth.
+Needs the `aloe_session` cookie of a user who maintains project `:id` (see "Sessions and roles").
+401 signed out, 403 for donors and for maintainers of other projects.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
@@ -69,16 +69,30 @@ compared; real maintainer accounts replace it later. Not donor-header auth.
 Without `taskId` it sets the project-wide suite; with it, an override for that
 one code task (the override wins on the verify lease).
 
-## Web API — demo identity via `x-aloe-donor: <donorId>` header (default `demo-donor`)
+## Sessions and roles
 
-Real auth (GitHub sign-in) replaces the header later; routes stay the same.
+Identity is a random token in the httpOnly, SameSite=Lax cookie `aloe_session` (the server stores only
+its SHA-256 and an expiry, 7 days). There is no identity header. Roles are per project: a *maintainer* is
+a user (a row of the donors table) with a row in `project_maintainers` for that project. Donors only
+donate compute and cannot make a project's decisions. Agent device tokens are a separate scheme (above).
+Code: `apps/server/src/session.ts` (`currentUser`, `requireUser` -> 401, `requireMaintainerOf` -> 403).
+GitHub sign-in (Better Auth) will replace only the demo login below; the session and role checks stay.
 
 | Method | Path | Body | Response |
 |---|---|---|---|
-| GET | `/api/causes` | | `Cause[]` |
-| GET | `/api/projects?cause=<CauseId>` | | `ProjectSummary[]` |
-| GET | `/api/projects/:id` | | `ProjectDetail` |
-| GET | `/api/projects/:id/staging` | | `StagingStatus` (publish status of merged tasks on the fork's `aloe/staging` branch, plus the PR url; `enabled: false` when `ALOE_PUBLISH_STAGING` is off) |
+| GET | `/api/auth/me` | | `AuthMe` = `{ user: {id,name,email} \| null, maintainerOf: string[] }` (always 200) |
+| POST | `/api/auth/logout` | | `{ ok: true }` (deletes the session, clears the cookie) |
+| GET | `/api/auth/demo-users` | | `DemoUser[]` (personas + roles). **404 unless env `ALOE_DEMO_LOGIN=1`** |
+| POST | `/api/auth/demo-login` | `{ userId }` | `AuthMe`, sets the cookie. **404 unless `ALOE_DEMO_LOGIN=1`**; 404 for an unknown user |
+
+## Web API — requires a session unless marked public
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/causes` (public) | | `Cause[]` |
+| GET | `/api/projects?cause=<CauseId>` (public) | | `ProjectSummary[]` (`backing` is false when signed out) |
+| GET | `/api/projects/:id` (public) | | `ProjectDetail` |
+| GET | `/api/projects/:id/staging` (public) | | `StagingStatus` (publish status of merged tasks on the fork's `aloe/staging` branch, plus the PR url; `enabled: false` when `ALOE_PUBLISH_STAGING` is off) |
 | POST | `/api/projects/:id/back` | | `{ ok: true }` |
 | DELETE | `/api/projects/:id/back` | | `{ ok: true }` |
 | GET | `/api/me` | | `Me` |
@@ -88,15 +102,17 @@ Real auth (GitHub sign-in) replaces the header later; routes stay the same.
 | GET | `/api/me/weekly-email.txt` | | `text/plain`: the email's plain-text fallback |
 | POST | `/api/me/weekly-email/send` | | `WeeklyEmailSendResponse`; 503 `not_configured` if `RESEND_API_KEY` is unset; 409 `conflict` if the donor turned `weeklyEmail` off |
 | GET | `/api/decisions?status=open` | | `Decision[]` |
-| POST | `/api/decisions/:id/resolve` | `ResolveDecisionRequest` | `Decision` |
-| POST | `/api/demo/reset` | optional `ResetDemoRequest` (`{ github?: boolean }`) | `ResetDemoResponse`: `{ ok: true, github?: { ok, message, closedPrs, resetBranches, commit } }`. Reseeds the database and clears the publish ledger; with `github: true` it also resets the demo fork (see below) |
-| GET | `/api/health` | | `{ ok: true }` |
+| POST | `/api/demo/reset` | optional `ResetDemoRequest` (`{ github?: boolean }`) | `ResetDemoResponse`: `{ ok: true, github?: { ok, message, closedPrs, resetBranches, commit } }`. Reseeds the database (sessions survive) and clears the publish ledger. Needs a session **and** `ALOE_DEMO_LOGIN=1` (else 404). With `github: true` the caller must also maintain the demo project (`ccf`; else 403, nothing reset) and the demo fork is reset too (see below) |
+| GET | `/api/health` (public) | | `{ ok: true }` |
 
-## Maintainer API — demo identity via `x-aloe-maintainer: <token>` header
+There is no donor-reachable "resolve a decision" route: escalations are answered only through the
+maintainer route below (`POST /api/decisions/:id/resolve` was removed).
 
-The token is compared in constant time with env `ALOE_MAINTAINER_TOKEN` (default `aloe-maintainer-demo`);
-wrong or missing -> 401. In the demo a valid token may act on any project. Real GitHub sign-in
-replaces it later (the check lives in one place, `requireMaintainer` in `apps/server/src/maintainer.ts`).
+## Maintainer API — session of a maintainer of `:id` (401 signed out, 403 otherwise)
+
+Every route under `/api/maintain/projects/:id/` requires `requireMaintainerOf(:id)`. Seeded personas:
+`maintainer-ccf` ("Miko Cool", project `ccf`) and one maintainer per other project; `demo-donor`
+(Kaeden Bryer) and `demo-donor-2` (Mikko Laine) are donors.
 `INTERVIEW_QUESTIONS` (core) are the five onboarding questions.
 
 | Method | Path | Body | Response |

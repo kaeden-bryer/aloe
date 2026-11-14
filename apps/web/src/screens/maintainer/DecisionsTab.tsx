@@ -2,7 +2,7 @@ import { useInbox, useResolveInbox } from "../../api/maintainer";
 import { WarningIcon } from "../../components/Icons";
 import { useToast } from "../../components/Toast";
 
-/** Every open escalation for this project, resolvable in place (same logic as the donor-side route). */
+/** Every open escalation for this project, resolvable in place (the server checks you maintain it). */
 export function DecisionsTab({ projectId }: { projectId: string }) {
   const flash = useToast();
   const { data, isPending } = useInbox(projectId);

@@ -196,19 +196,25 @@ describe("DB reset and the API", () => {
     expect(() => clearLedger(db)).not.toThrow();
   });
 
-  it("POST /api/demo/reset without a body only resets the DB; with {github:true} it also reports the GitHub result", async () => {
+  it("POST /api/demo/reset: DB-only for anyone signed in; {github:true} only for the ccf maintainer", async () => {
+    resetAndSeed(db, T0);
     const reset = vi.fn(async () => ({ ok: true, message: "done", closedPrs: 1, resetBranches: ["aloe/demo-base", "aloe/staging"], commit: "a".repeat(40) }));
-    const app = createApp(db, { now: () => T0, webDist: null, publisher: null, demoResetter: { reset } });
-    const plain = await app.request("/api/demo/reset", { method: "POST" });
-    expect(await plain.json()).toEqual({ ok: true });
+    const app = createApp(db, { now: () => T0, webDist: null, publisher: null, demoLogin: true, demoResetter: { reset }, actAs: (c) => c.req.header("x-test-user") ?? "demo-donor" });
+    const post = (body?: unknown, user?: string) =>
+      app.request("/api/demo/reset", { method: "POST", headers: { "content-type": "application/json", ...(user ? { "x-test-user": user } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+
+    expect(await (await post()).json()).toEqual({ ok: true });
     expect(reset).not.toHaveBeenCalled();
 
-    const full = await app.request("/api/demo/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ github: true }) });
+    expect((await post({ github: true })).status).toBe(403); // a donor may not force-push the fork
+    expect((await post({ github: true }, "maintainer-eae")).status).toBe(403); // nor another project's maintainer
+    expect(reset).not.toHaveBeenCalled();
+
+    const full = await post({ github: true }, "maintainer-ccf");
     expect(full.status).toBe(200);
     expect(await full.json()).toMatchObject({ ok: true, github: { ok: true, closedPrs: 1 } });
     expect(reset).toHaveBeenCalledOnce();
 
-    const bad = await app.request("/api/demo/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ github: "yes" }) });
-    expect(bad.status).toBe(400);
+    expect((await post({ github: "yes" }, "maintainer-ccf")).status).toBe(400);
   });
 });

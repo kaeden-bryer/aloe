@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { Cause, Dashboard, Decision, Me, ProjectDetail, ProjectSummary } from "@aloe/core/contracts";
+import { AuthMe, Cause, Dashboard, Decision, Me, ProjectDetail, ProjectSummary } from "@aloe/core/contracts";
 import { causes, demoProjects, toProjectDetail } from "../api/fixtures";
 import { __setMockState, buildMockDashboard, mockFetch } from "../api/mock";
 
@@ -26,7 +26,7 @@ describe("fixtures", () => {
 });
 
 describe("mock API routes", () => {
-  beforeEach(() => __setMockState({}));
+  beforeEach(() => __setMockState({ userId: "demo-donor" }));
 
   it("GET routes return contract-shaped JSON", async () => {
     z.array(Cause).parse(await get("/api/causes"));
@@ -56,13 +56,29 @@ describe("mock API routes", () => {
     const bad = await mockFetch("PUT", "/api/me/settings", { pct: 500 });
     expect(bad.status).toBe(400);
 
-    const resolved = await mockFetch("POST", "/api/decisions/farmos-d1/resolve", { optionId: "approve" });
+    // A donor can't resolve; the farmOS maintainer can, once.
+    const url = "/api/maintain/projects/farmos/decisions/farmos-d1/resolve";
+    expect((await mockFetch("POST", url, { optionId: "approve" })).status).toBe(403);
+    await mockFetch("POST", "/api/auth/demo-login", { userId: "maintainer-farmos" });
+    const resolved = await mockFetch("POST", url, { optionId: "approve" });
     expect(Decision.parse(resolved.json).status).toBe("resolved");
     expect(ProjectDetail.parse(await get("/api/projects/farmos")).openDecision).toBeNull();
-    expect((await mockFetch("POST", "/api/decisions/farmos-d1/resolve", { optionId: "approve" })).status).toBe(409);
+    expect((await mockFetch("POST", url, { optionId: "approve" })).status).toBe(409);
+    await mockFetch("POST", "/api/auth/demo-login", { userId: "demo-donor" });
 
     await mockFetch("POST", "/api/demo/reset");
     expect(Me.parse(await get("/api/me")).backings).toEqual([]);
+  });
+
+  it("mock sessions: 401 signed out, /me reflects the persona, logout signs out", async () => {
+    await mockFetch("POST", "/api/auth/logout");
+    expect((await mockFetch("GET", "/api/me")).status).toBe(401);
+    expect((await mockFetch("GET", "/api/projects")).status).toBe(200); // public
+    expect((await mockFetch("GET", "/api/maintain/projects/eae/brief")).status).toBe(401);
+    await mockFetch("POST", "/api/auth/demo-login", { userId: "maintainer-ccf" });
+    expect(AuthMe.parse(await get("/api/auth/me")).maintainerOf).toEqual(["eae"]);
+    expect((await mockFetch("GET", "/api/maintain/projects/eae/brief")).status).toBe(200);
+    expect((await mockFetch("GET", "/api/maintain/projects/farmos/brief")).status).toBe(403);
   });
 
   it("unknown project is a 404 ApiError", async () => {

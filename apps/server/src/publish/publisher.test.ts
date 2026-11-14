@@ -269,14 +269,14 @@ describe("publishing through the API", () => {
     resetAndSeed(db, T0);
     // Seeded repoUrl is not a GitHub repo, so this publish must fail without breaking the merge.
     const pub = createStagingPublisher({ db, now: () => T0, github, cacheDir: tmp("cacheapi") });
-    const app = createApp(db, { now: () => T0, webDist: null, publisher: pub });
+    const app = createApp(db, { now: () => T0, webDist: null, publisher: pub, actAs: (c) => c.req.header("x-test-user") ?? "demo-donor" });
     const open = (await (await app.request("/api/decisions?status=open")).json()) as { id: string; projectId: string }[];
     expect(open.length).toBeGreaterThan(0);
     const dec = open[0]!;
 
-    const res = await app.request(`/api/decisions/${dec.id}/resolve`, {
+    const res = await app.request(`/api/maintain/projects/${dec.projectId}/decisions/${dec.id}/resolve`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-test-user": `maintainer-${dec.projectId}` },
       body: JSON.stringify({ optionId: "approve" }),
     });
     expect(res.status).toBe(200);

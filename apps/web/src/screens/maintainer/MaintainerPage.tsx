@@ -3,7 +3,7 @@
  * hash-free query (?tab=) so a reload or a shared link lands on the same one.
  */
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import { useProject } from "../../api/hooks";
+import { useAuth, useProject } from "../../api/hooks";
 import { useInbox } from "../../api/maintainer";
 import { StagingLink } from "../../components/StagingLink";
 import { BriefTab } from "./BriefTab";
@@ -22,7 +22,10 @@ export function MaintainerPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { data: p, isPending, isError } = useProject(projectId);
-  const inbox = useInbox(projectId);
+  const { data: auth } = useAuth();
+  const allowed = !!auth?.maintainerOf.includes(projectId);
+  // Not allowed: skip the console's queries entirely (the server would answer 403 anyway).
+  const inbox = useInbox(projectId, allowed);
   const tab: TabId = TABS.find((t) => t.id === params.get("tab"))?.id ?? "brief";
   const open = inbox.data?.length ?? 0;
 
@@ -35,7 +38,17 @@ export function MaintainerPage() {
       </nav>
       {isPending && <p className="loading">Loading project…</p>}
       {isError && <p className="loading">We couldn't find that project.</p>}
-      {p && (
+      {p && !allowed && (
+        <div className="maintain-page">
+          <h1>{p.emoji} {p.name}</h1>
+          <p className="page-lede">
+            The maintainer tools are only for this project's maintainers, and {auth?.user ? `you're signed in as ${auth.user.name}` : "you're not signed in"}.
+            Donors can follow the project and back it from its page; switch to a maintainer with the picker in the sidebar to see the console.
+          </p>
+          <button type="button" className="btn-outline" onClick={() => navigate(`/projects/${projectId}`)}>Back to the project</button>
+        </div>
+      )}
+      {p && allowed && (
         <div className="maintain-page">
           <h1>{p.emoji} {p.name}</h1>
           <StagingLink projectId={projectId} compact />

@@ -195,9 +195,9 @@ export const defaultSettings: DonorSettings = {
 
 export const baseMe: Omit<Me, "settings" | "backings"> = {
   id: "demo-donor",
-  name: "Aino Virtanen",
-  email: "aino@example.org",
-  devices: [{ id: "dev-1", name: "Aino's laptop (Claude Pro)", lastSeenAt: Date.UTC(2026, 10, 14, 8, 0) }],
+  name: "Kaeden Bryer",
+  email: "kaeden@example.org",
+  devices: [{ id: "dev-1", name: "Kaeden's laptop (Claude Pro)", lastSeenAt: Date.UTC(2026, 10, 14, 8, 0) }],
 };
 
 /**

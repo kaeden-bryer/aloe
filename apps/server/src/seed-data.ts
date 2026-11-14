@@ -139,11 +139,25 @@ export interface SeedDonor {
 }
 
 export const DONORS: SeedDonor[] = [
-  { id: "demo-donor", name: "Aino Virtanen", email: "aino@example.org", causes: ["electric", "farming"], backs: ["eae", "farmos"], priorVerified: 3, deviceName: "Aino's MacBook Air" },
+  { id: "demo-donor", name: "Kaeden Bryer", email: "kaeden@example.org", causes: ["electric", "farming"], backs: ["eae", "farmos"], priorVerified: 3, deviceName: "Kaeden's MacBook Air" },
   { id: "demo-donor-2", name: "Mikko Laine", email: "mikko@example.org", causes: ["climate", "health"], backs: ["biomass", "accessmod"], priorVerified: 12, deviceName: "Mikko's workstation" },
   { id: "donor-priya", name: "Priya Nair", email: "priya@example.org", causes: ["eco", "electric"], backs: ["off", "eae"], priorVerified: 8, deviceName: "Priya's laptop" },
   { id: "donor-tomas", name: "Tomás Silva", email: "tomas@example.org", causes: ["climate", "health"], backs: ["biomass", "accessmod"], priorVerified: 6, deviceName: "Tomás's desktop" },
   { id: "donor-grace", name: "Grace Okafor", email: "grace@example.org", causes: ["farming", "eco"], backs: ["farmos", "off"], priorVerified: 9, deviceName: "Grace's laptop" },
+];
+
+/**
+ * Demo maintainers: one per project, each only for their own project. They are
+ * rows of `donors` (a maintainer is just a user with membership rows) but have
+ * no devices or backings, since they are on the project's side, not donating.
+ */
+export const MAINTAINERS: { id: string; name: string; email: string; projectId: string }[] = [
+  { id: "maintainer-ccf", name: "Miko Cool", email: "miko@example.org", projectId: "ccf" },
+  { id: "maintainer-eae", name: "Wanjiru Kamau", email: "wanjiru@example.org", projectId: "eae" },
+  { id: "maintainer-biomass", name: "Lars Eriksen", email: "lars@example.org", projectId: "biomass" },
+  { id: "maintainer-off", name: "Camille Roux", email: "camille@example.org", projectId: "off" },
+  { id: "maintainer-farmos", name: "Jonas Becker", email: "jonas@example.org", projectId: "farmos" },
+  { id: "maintainer-accessmod", name: "Amara Diallo", email: "amara@example.org", projectId: "accessmod" },
 ];
 
 /** Spec details for one task title. Goal defaults to the title. */

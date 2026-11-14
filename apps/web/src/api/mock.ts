@@ -6,7 +6,7 @@
  * response). State lives in localStorage so a page reload keeps your choices,
  * and "Reset demo" wipes it.
  */
-import { DonorSettings, ResolveDecisionRequest, type Dashboard, type Decision, type Me } from "@aloe/core/contracts";
+import { DemoLoginRequest, DonorSettings, ResolveDecisionRequest, type Dashboard, type Decision, type Me } from "@aloe/core/contracts";
 import {
   WEEK,
   baseMe,
@@ -24,11 +24,31 @@ interface MockState {
   backings: string[];
   /** projectId -> chosen option label, once a maintainer resolved the decision. */
   resolved: Record<string, string>;
+  /** Who is "signed in" (the mock's stand-in for the session cookie). null = signed out. */
+  userId: string | null;
 }
+
+/**
+ * Demo personas, like the server's seed. The fixtures have no CCF project, so in mock
+ * mode the "Miko Cool" maintainer persona maintains Energy Access Explorer instead.
+ */
+const PERSONAS: { id: string; name: string; email: string; maintainerOf: string[] }[] = [
+  { id: "demo-donor", name: "Kaeden Bryer", email: "kaeden@example.org", maintainerOf: [] },
+  { id: "demo-donor-2", name: "Mikko Laine", email: "mikko@example.org", maintainerOf: [] },
+  { id: "maintainer-ccf", name: "Miko Cool", email: "miko@example.org", maintainerOf: ["eae"] },
+  { id: "maintainer-farmos", name: "Jonas Becker", email: "jonas@example.org", maintainerOf: ["farmos"] },
+];
+const persona = () => PERSONAS.find((p) => p.id === state.userId);
+const unauthorized = (): Reply => ({ status: 401, json: { error: "Sign in first", code: "unauthorized" } });
+const forbidden = (): Reply => ({ status: 403, json: { error: "Only a maintainer of this project can do that", code: "forbidden" } });
+const authMe = () => {
+  const p = persona();
+  return { user: p ? { id: p.id, name: p.name, email: p.email } : null, maintainerOf: p?.maintainerOf ?? [] };
+};
 
 const STORAGE_KEY = "aloe-mock-state";
 
-const freshState = (): MockState => ({ settings: { ...defaultSettings }, backings: [], resolved: {} });
+const freshState = (): MockState => ({ settings: { ...defaultSettings }, backings: [], resolved: {}, userId: null });
 
 function load(): MockState {
   try {
@@ -66,7 +86,8 @@ const detail = (id: string) => {
 };
 
 function me(): Me {
-  return { ...baseMe, settings: state.settings, backings: [...state.backings] };
+  const p = persona();
+  return { ...baseMe, ...(p ? { id: p.id, name: p.name, email: p.email } : {}), settings: state.settings, backings: [...state.backings] };
 }
 
 function openDecisions(): Decision[] {
@@ -195,15 +216,53 @@ const ok = (json: unknown): Reply => ({ status: 200, json });
 const notFound = (what: string): Reply => ({ status: 404, json: { error: `${what} not found`, code: "not_found" } });
 const badRequest = (error: string): Reply => ({ status: 400, json: { error, code: "bad_request" } });
 
+/** A maintainer answers an escalation (reached only through the guarded maintainer route). */
+function resolveMock(decisionId: string, body: unknown): Reply {
+  const p = demoProjects.find((x) => `${x.id}-d1` === decisionId);
+  if (!p) return notFound("Decision");
+  if (p.id in state.resolved) return { status: 409, json: { error: "Decision already resolved", code: "conflict" } };
+  const req = ResolveDecisionRequest.safeParse(body);
+  const option = req.success ? p.options.find((o) => o.id === req.data.optionId) : undefined;
+  if (!option) return badRequest("Unknown option");
+  state.resolved[p.id] = option.label;
+  save();
+  return ok(decisionFor(p, "resolved", option.label));
+}
+
 function route(method: string, url: URL, body: unknown): Reply {
   const path = url.pathname;
   let m: RegExpMatchArray | null;
+
+  // Auth: a mock session (see PERSONAS). Same routes and shapes as the server.
+  if (method === "GET" && path === "/api/auth/me") return ok(authMe());
+  if (method === "GET" && path === "/api/auth/demo-users") {
+    return ok(PERSONAS.map((p) => ({ id: p.id, name: p.name, email: p.email, maintainerOf: p.maintainerOf, role: p.maintainerOf.length ? "maintainer" : "donor" })));
+  }
+  if (method === "POST" && path === "/api/auth/demo-login") {
+    const req = DemoLoginRequest.safeParse(body);
+    const p = req.success ? PERSONAS.find((x) => x.id === req.data.userId) : undefined;
+    if (!p) return notFound("User");
+    state.userId = p.id;
+    save();
+    return ok(authMe());
+  }
+  if (method === "POST" && path === "/api/auth/logout") {
+    state.userId = null;
+    save();
+    return ok({ ok: true });
+  }
+
+  // Everything below needs a session; maintainer routes also need the role for that project.
+  const isPublic = (method === "GET" && (path === "/api/causes" || path.startsWith("/api/projects")) && !path.endsWith("/back")) ;
+  if (!isPublic && !persona()) return unauthorized();
+  const maintainMatch = path.match(/^\/api\/maintain\/projects\/([^/]+)\//);
+  if (maintainMatch && !persona()!.maintainerOf.includes(maintainMatch[1]!)) return forbidden();
 
   // Maintainer area: decisions reuse the donor-side state; the rest lives in mockMaintainer.ts.
   if ((m = path.match(/^\/api\/maintain\/projects\/([^/]+)\/decisions(?:\/([^/]+)\/resolve)?$/))) {
     if (!project(m[1]!)) return notFound("Project");
     if (!m[2]) return ok(openDecisions().filter((d) => d.projectId === m![1]));
-    return route(method, new URL(`/api/decisions/${m[2]}/resolve`, url), body);
+    return resolveMock(m[2], body);
   }
   const maintained = maintainerRoute(method, path, body, (id) => !!project(id));
   if (maintained) return maintained;
@@ -245,23 +304,12 @@ function route(method: string, url: URL, body: unknown): Reply {
     return { status: 503, json: { error: "Email isn't set up yet: add RESEND_API_KEY to .env to send real emails.", code: "not_configured" } };
   }
   if (method === "GET" && path === "/api/decisions") return ok(openDecisions());
-  if ((m = path.match(/^\/api\/decisions\/([^/]+)\/resolve$/)) && method === "POST") {
-    const p = demoProjects.find((x) => `${x.id}-d1` === m![1]);
-    if (!p) return notFound("Decision");
-    if (p.id in state.resolved) return { status: 409, json: { error: "Decision already resolved", code: "conflict" } };
-    const req = ResolveDecisionRequest.safeParse(body);
-    const option = req.success ? p.options.find((o) => o.id === req.data.optionId) : undefined;
-    if (!option) return badRequest("Unknown option");
-    state.resolved[p.id] = option.label;
-    save();
-    return ok(decisionFor(p, "resolved", option.label));
-  }
   // Publishing is off in mock mode, so the staging status is always empty.
   if (method === "GET" && /^\/api\/projects\/[^/]+\/staging$/.test(path)) {
     return ok({ enabled: false, branch: "aloe/staging", prUrl: null, items: [] });
   }
   if (method === "POST" && path === "/api/demo/reset") {
-    state = freshState();
+    state = { ...freshState(), userId: state.userId }; // a reset doesn't sign you out
     save();
     return ok({ ok: true });
   }

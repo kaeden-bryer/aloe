@@ -8,11 +8,21 @@ import { useMe, useProjects } from "../api/hooks";
 import { donorStatus } from "../lib/donor";
 import { initials } from "../lib/format";
 import { Brand } from "./Brand";
+import { PersonaPicker, RequireSignIn } from "../screens/SignIn";
 import { DashboardIcon, MarketIcon, SettingsIcon } from "./Icons";
 
 const navClass = ({ isActive }: { isActive: boolean }) => (isActive ? "nav-item ghost active" : "nav-item ghost");
 
+/** The signed-in layout. Signed-out visitors get the sign-in screen instead of the app. */
 export function AppShell() {
+  return (
+    <RequireSignIn>
+      <Shell />
+    </RequireSignIn>
+  );
+}
+
+function Shell() {
   const { pathname } = useLocation();
   const { data: me } = useMe();
   const { data: projects = [] } = useProjects();
@@ -63,6 +73,7 @@ export function AppShell() {
             <span className="s">{me && me.devices.length > 0 ? "Claude Pro connected" : "No agent paired yet"}</span>
           </span>
         </div>
+        <PersonaPicker />
       </aside>
 
       <main className="app-main">

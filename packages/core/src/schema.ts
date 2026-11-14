@@ -185,3 +185,29 @@ export const taskDrafts = sqliteTable(
   },
   (t) => [index("task_drafts_project_idx").on(t.projectId, t.status)],
 );
+
+// ---- Sessions and maintainer roles ----
+/**
+ * Who maintains which project. A "maintainer" is not a separate kind of user:
+ * it is a user (a row of `donors`) with at least one row here. Per project, so
+ * being CCF's maintainer gives no power over any other project.
+ */
+export const projectMaintainers = sqliteTable(
+  "project_maintainers",
+  {
+    userId: text("user_id").notNull().references(() => donors.id),
+    projectId: text("project_id").notNull().references(() => projects.id),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId] })],
+);
+
+/**
+ * Browser sessions. Like device tokens we store only the SHA-256 of the random
+ * cookie value, so a leaked database can't be replayed as a login.
+ */
+export const sessions = sqliteTable("sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id").notNull().references(() => donors.id),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});
