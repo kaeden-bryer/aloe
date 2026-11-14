@@ -11,7 +11,7 @@ describe("migrate()", () => {
   it("creates every table in schema.ts with exactly the same columns", () => {
     const { sqlite } = openDb(":memory:");
     migrate(sqlite);
-    expect(tables.length).toBe(9);
+    expect(tables.length).toBe(10);
 
     for (const table of tables) {
       const config = getTableConfig(table);

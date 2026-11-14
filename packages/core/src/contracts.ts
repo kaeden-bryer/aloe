@@ -280,3 +280,65 @@ export const Dashboard = z.object({
   platform: z.array(z.object({ label: z.string(), value: z.string() })),
 });
 export type Dashboard = z.infer<typeof Dashboard>;
+
+// ================= Maintainer area (steward onboarding, import, inbox) =================
+// Everything under /api/maintain/*; see the "Maintainer API" section of API.md.
+
+/**
+ * The five questions the onboarding interview asks. They live in core so the
+ * web form and the server's validation (exactly this many answers) can't drift.
+ */
+export const INTERVIEW_QUESTIONS = [
+  "What does your project do, and who relies on it?",
+  "What must never break or change without a maintainer's say-so?",
+  "Which parts of the code are safe for an AI agent to work on freely?",
+  "How do you build and test the project (commands, tools, versions)?",
+  "What does a good contribution look like here (style, review habits, things you always reject)?",
+] as const;
+
+export const OnboardRequest = z.object({
+  /** One answer per question in INTERVIEW_QUESTIONS, in order. Blank answers are allowed but not all blank. */
+  answers: z
+    .array(z.string().max(4000))
+    .length(INTERVIEW_QUESTIONS.length)
+    .refine((a) => a.some((x) => x.trim() !== ""), { message: "Answer at least one question" }),
+});
+export type OnboardRequest = z.infer<typeof OnboardRequest>;
+
+export const MaintainerBrief = z.object({ projectId: z.string(), brief: z.string() });
+export type MaintainerBrief = z.infer<typeof MaintainerBrief>;
+
+/** Max issues pulled in one import. Keeps the steward call and the review queue small. */
+export const MAX_IMPORT_ISSUES = 30;
+
+export const ImportIssuesRequest = z.object({
+  /** Only import issues carrying this GitHub label. */
+  label: z.string().trim().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(MAX_IMPORT_ISSUES).optional(),
+});
+export type ImportIssuesRequest = z.infer<typeof ImportIssuesRequest>;
+
+/** A steward-written task waiting for a maintainer. Agents never see drafts. */
+export const DraftTask = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  sourceIssue: z.number().int().nullable(),
+  spec: TaskSpec,
+  createdAt: z.number().int(),
+});
+export type DraftTask = z.infer<typeof DraftTask>;
+
+export const ImportIssuesResponse = z.object({
+  drafts: z.array(DraftTask),
+  /** Issues left out because they already had a draft (approved, rejected or pending). */
+  skipped: z.number().int(),
+  /** "owner/repo" the issues were read from (the parent if the project's repo is a fork). */
+  source: z.string(),
+});
+export type ImportIssuesResponse = z.infer<typeof ImportIssuesResponse>;
+
+export const UpdateDraftRequest = z.object({ spec: TaskSpec });
+export type UpdateDraftRequest = z.infer<typeof UpdateDraftRequest>;
+
+export const ApproveDraftResponse = z.object({ taskId: z.string() });
+export type ApproveDraftResponse = z.infer<typeof ApproveDraftResponse>;

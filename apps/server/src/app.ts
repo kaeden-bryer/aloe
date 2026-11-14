@@ -48,6 +48,8 @@ import { resetAndSeed } from "./seed.ts";
 import { CAUSES } from "./seed-data.ts";
 import { getMe, getProject, listDecisions, listProjects, toDecision } from "./views.ts";
 import { SERVER_ROOT } from "./database.ts";
+import type { GitHubClient } from "./github.ts";
+import { createMaintainerRoutes, type MaintainerDeps } from "./maintainer.ts";
 
 const { devices, donors, projects, backings, decisions, tasks, events, submissions } = schema;
 
@@ -61,6 +63,12 @@ export interface AppOptions {
   pairingCode?: string;
   /** Built web app to serve at `/`. Defaults to apps/web/dist; pass null to disable. */
   webDist?: string | null;
+  /** Maintainer area: demo token (default env ALOE_MAINTAINER_TOKEN, then "aloe-maintainer-demo"). */
+  maintainerToken?: string;
+  /** Maintainer area: GitHub client, injected in tests. */
+  github?: GitHubClient;
+  /** Maintainer area: steward functions, injectable in tests. */
+  steward?: MaintainerDeps["steward"];
 }
 
 const DEFAULT_DONOR = "demo-donor";
@@ -236,6 +244,8 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
     const decision = resolveDecision(db, c.req.param("id"), body, donorIdOf(c), now());
     return send(c, Decision, decision);
   });
+
+  app.route("/api/maintain", createMaintainerRoutes(db, { now, token: opts.maintainerToken, github: opts.github, steward: opts.steward, resolveDecision }));
 
   app.post("/api/demo/reset", (c) => {
     resetAndSeed(db, now());

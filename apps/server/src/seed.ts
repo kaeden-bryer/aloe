@@ -33,6 +33,7 @@ export function resetAndSeed(db: AloeDb, now: number): void {
     // Children first, so foreign keys never point at a deleted row.
     for (const table of [
       schema.events,
+      schema.taskDrafts,
       schema.decisions,
       schema.verifications,
       schema.submissions,
