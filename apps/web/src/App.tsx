@@ -11,6 +11,7 @@ import { Market } from "./screens/Market";
 import { Onboarding } from "./screens/Onboarding";
 import { ProjectPage } from "./screens/ProjectPage";
 import { Settings } from "./screens/Settings";
+import { WeeklyEmailPreview } from "./screens/WeeklyEmailPreview";
 
 export function App() {
   return (
@@ -24,6 +25,7 @@ export function App() {
           <Route path="/market" element={<Market />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/settings/weekly-email" element={<WeeklyEmailPreview />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

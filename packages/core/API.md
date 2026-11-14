@@ -1,7 +1,7 @@
 # Aloe HTTP API (contract)
 
 All bodies are JSON and validated with the Zod schemas in `src/contracts.ts`.
-Errors: `{ error, code }` (`ApiError`) with status 400 / 401 / 404 / 409.
+Errors: `{ error, code }` (`ApiError`) with status 400 / 401 / 404 / 409 / 503 (`not_configured`).
 
 ## Agent API — `Authorization: Bearer <device token>`
 
@@ -28,6 +28,9 @@ Real auth (GitHub sign-in) replaces the header later; routes stay the same.
 | GET | `/api/me` | | `Me` |
 | PUT | `/api/me/settings` | `DonorSettings` | `Me` |
 | GET | `/api/me/dashboard` | | `Dashboard` |
+| GET | `/api/me/weekly-email` | | `text/html`: the weekly donor email, rendered from the same `Dashboard` data (demo preview) |
+| GET | `/api/me/weekly-email.txt` | | `text/plain`: the email's plain-text fallback |
+| POST | `/api/me/weekly-email/send` | | `WeeklyEmailSendResponse`; 503 `not_configured` if `RESEND_API_KEY` is unset; 409 `conflict` if the donor turned `weeklyEmail` off |
 | GET | `/api/decisions?status=open` | | `Decision[]` |
 | POST | `/api/decisions/:id/resolve` | `ResolveDecisionRequest` | `Decision` |
 | POST | `/api/demo/reset` | | `{ ok: true }` (reseeds the database) |

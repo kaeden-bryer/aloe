@@ -154,6 +154,8 @@ export const ApiError = z.object({
     "lease_lost",
     "illegal_transition",
     "conflict",
+    // 503: an optional service (e.g. Resend email) has no API key yet.
+    "not_configured",
   ]),
 });
 export type ApiError = z.infer<typeof ApiError>;
@@ -280,3 +282,14 @@ export const Dashboard = z.object({
   platform: z.array(z.object({ label: z.string(), value: z.string() })),
 });
 export type Dashboard = z.infer<typeof Dashboard>;
+
+/**
+ * POST /api/me/weekly-email/send. The email itself is built from `Dashboard`
+ * (same data as the dashboard screen), so there's no separate report shape.
+ */
+export const WeeklyEmailSendResponse = z.object({
+  ok: z.literal(true),
+  to: z.string(),
+  subject: z.string(),
+});
+export type WeeklyEmailSendResponse = z.infer<typeof WeeklyEmailSendResponse>;
