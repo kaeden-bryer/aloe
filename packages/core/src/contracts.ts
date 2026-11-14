@@ -194,6 +194,8 @@ export const ApiError = z.object({
   code: z.enum([
     "bad_request",
     "unauthorized",
+    // 403: signed in, but not allowed (e.g. a donor trying a maintainer-only action).
+    "forbidden",
     "not_found",
     "lease_lost",
     "illegal_transition",
@@ -203,6 +205,26 @@ export const ApiError = z.object({
   ]),
 });
 export type ApiError = z.infer<typeof ApiError>;
+
+// ---------- Sessions and roles ----------
+// "Who are you" (a session cookie) is separate from "what may you do" (a
+// per-project maintainer row). GitHub sign-in will replace only the first part.
+
+export const AuthUser = z.object({ id: z.string(), name: z.string(), email: z.string() });
+export type AuthUser = z.infer<typeof AuthUser>;
+
+/** GET /api/auth/me. `user: null` = signed out. `maintainerOf` = ids of projects this user maintains. */
+export const AuthMe = z.object({ user: AuthUser.nullable(), maintainerOf: z.array(z.string()) });
+export type AuthMe = z.infer<typeof AuthMe>;
+
+/** A demo persona shown in the "Sign in as" picker (only when ALOE_DEMO_LOGIN=1). */
+export const DemoUser = AuthUser.extend({
+  role: z.enum(["donor", "maintainer"]),
+  maintainerOf: z.array(z.string()),
+});
+export type DemoUser = z.infer<typeof DemoUser>;
+
+export const DemoLoginRequest = z.object({ userId: z.string().min(1) });
 
 // ---------- Web app response shapes ----------
 // The server builds these; the web app renders them. Keeping them here means
@@ -238,7 +260,7 @@ export const QueueTask = z.object({
   kind: TaskKind,
   state: TaskStateSchema,
   category: TaskCategory,
-  /** e.g. "Aino's agent" or "Unclaimed" */
+  /** e.g. "Kaeden's agent" or "Unclaimed" */
   who: z.string(),
 });
 export type QueueTask = z.infer<typeof QueueTask>;

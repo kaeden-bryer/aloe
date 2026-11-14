@@ -16,9 +16,12 @@ import {
   Cause,
   CauseId,
   ClaimRequest,
+  AuthMe,
   ClaimResponse,
   Dashboard,
   Decision,
+  DemoLoginRequest,
+  DemoUser,
   DonorSettings,
   HeartbeatRequest,
   HeartbeatResponse,
@@ -50,6 +53,7 @@ import { resetAndSeed } from "./seed.ts";
 import { CAUSES } from "./seed-data.ts";
 import { getMe, getProject, listDecisions, listProjects, toDecision } from "./views.ts";
 import { SERVER_ROOT } from "./database.ts";
+import { createSessionTools } from "./session.ts";
 import { mountWeeklyEmail } from "./email/routes.ts";
 import type { EmailSender } from "./email/send.ts";
 import type { GitHubClient } from "./github.ts";
@@ -72,8 +76,10 @@ export interface AppOptions {
   webDist?: string | null;
   /** Email provider for the weekly report. Omit to use RESEND_API_KEY; null = not configured. */
   emailSender?: EmailSender | null;
-  /** Maintainer area: demo token (default env ALOE_MAINTAINER_TOKEN, then "aloe-maintainer-demo"). */
-  maintainerToken?: string;
+  /** Demo sign-in picker + demo reset. Default: env ALOE_DEMO_LOGIN=1. Off = those routes 404. */
+  demoLogin?: boolean;
+  /** TEST ONLY: act as this user id without a cookie. Never wired to a request header. */
+  actAs?: (c: Context) => string | null | undefined;
   /** Maintainer area: GitHub client, injected in tests. */
   github?: GitHubClient;
   /** Maintainer area: steward functions, injectable in tests. */
@@ -82,7 +88,6 @@ export interface AppOptions {
   publisher?: StagingPublisher | null;
 }
 
-const DEFAULT_DONOR = "demo-donor";
 // How long an idle agent waits before asking again. Short for demos (set in .env),
 // longer in production so thousands of idle agents don't poll the server constantly.
 // Read per request, not at import time: index.ts loads .env after this module is imported.
@@ -92,6 +97,12 @@ const pausedRetryMs = () => Math.max(idleRetryMs(), 60_000);
 export function createApp(db: AloeDb, opts: AppOptions = {}) {
   const now = opts.now ?? Date.now;
   const app = new Hono<Env>();
+  const auth = createSessionTools({ db, now, actAs: opts.actAs });
+  // Read per request (not at import) because index.ts loads .env after this module is imported.
+  const demoLoginOn = () => opts.demoLogin ?? process.env.ALOE_DEMO_LOGIN === "1";
+  const requireDemoLogin = () => {
+    if (!demoLoginOn()) throw new HttpError(404, "not_found", "No such API route");
+  };
   const publisher = opts.publisher === undefined ? publisherFromEnv(db, now) : opts.publisher;
   // On a real boot, retry anything a previous run left pending or failed.
   if (opts.publisher === undefined && publisher) void publisher.retryPending();
@@ -193,16 +204,43 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
   });
 
   // ================= Web API =================
-  // Demo identity: the x-aloe-donor header. GitHub sign-in replaces this later.
+  // Identity comes from the session cookie (session.ts). Public routes use `viewerId`
+  // (maybe signed out); donor routes use `requireDonor` (401 without a session).
 
-  const donorIdOf = (c: Context) => c.req.header("x-aloe-donor") || DEFAULT_DONOR;
-  const requireDonor = (c: Context) => {
-    const id = donorIdOf(c);
-    if (!db.select({ id: donors.id }).from(donors).where(eq(donors.id, id)).get()) {
-      throw new HttpError(401, "unauthorized", `Unknown donor '${id}'`);
-    }
-    return id;
-  };
+  const viewerId = (c: Context) => auth.currentUser(c)?.id ?? "";
+  const requireDonor = (c: Context) => auth.requireUser(c).id;
+
+  app.get("/api/auth/me", (c) => {
+    const user = auth.currentUser(c);
+    return send(c, AuthMe, { user, maintainerOf: user ? auth.maintainerOf(user.id) : [] });
+  });
+
+  // Demo-only sign-in: pick a persona, get a real session cookie. Off unless ALOE_DEMO_LOGIN=1.
+  // GitHub sign-in will replace this step; the session and role checks stay.
+  app.get("/api/auth/demo-users", (c) => {
+    requireDemoLogin();
+    const personas = db.select().from(donors).all().map((d) => ({ id: d.id, name: d.name, email: d.email, maintainerOf: auth.maintainerOf(d.id) }));
+    // Personas = the two seeded donors, plus anyone who maintains a project.
+    const shown = personas
+      .filter((p) => p.maintainerOf.length > 0 || p.id === "demo-donor" || p.id === "demo-donor-2")
+      .map((p) => ({ ...p, role: p.maintainerOf.length > 0 ? ("maintainer" as const) : ("donor" as const) }));
+    return send(c, z.array(DemoUser), shown);
+  });
+
+  app.post("/api/auth/demo-login", async (c) => {
+    requireDemoLogin();
+    const { userId } = await readBody(c, DemoLoginRequest);
+    const user = auth.userById(userId);
+    if (!user) throw new HttpError(404, "not_found", "Unknown user");
+    auth.startSession(c, user.id);
+    return send(c, AuthMe, { user, maintainerOf: auth.maintainerOf(user.id) });
+  });
+
+  app.post("/api/auth/logout", (c) => {
+    auth.endSession(c);
+    return c.json({ ok: true });
+  });
+
   const requireProject = (id: string) => {
     if (!db.select({ id: projects.id }).from(projects).where(eq(projects.id, id)).get()) {
       throw new HttpError(404, "not_found", "Project not found");
@@ -215,11 +253,11 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
     const raw = c.req.query("cause");
     const cause = raw === undefined || raw === "" ? undefined : CauseId.safeParse(raw);
     if (cause && !cause.success) throw new HttpError(400, "bad_request", `Unknown cause '${raw}'`);
-    return send(c, z.array(ProjectSummary), listProjects(db, donorIdOf(c), now(), cause?.data));
+    return send(c, z.array(ProjectSummary), listProjects(db, viewerId(c), now(), cause?.data));
   });
 
   app.get("/api/projects/:id", (c) => {
-    const detail = getProject(db, c.req.param("id"), donorIdOf(c), now());
+    const detail = getProject(db, c.req.param("id"), viewerId(c), now());
     if (!detail) throw new HttpError(404, "not_found", "Project not found");
     return send(c, ProjectDetail, detail);
   });
@@ -261,6 +299,7 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
   mountWeeklyEmail(app, { db, now, requireDonor, emailSender: opts.emailSender });
 
   app.get("/api/decisions", (c) => {
+    requireDonor(c);
     const status = c.req.query("status");
     if (status !== undefined && status !== "open" && status !== "resolved") {
       throw new HttpError(400, "bad_request", "status must be 'open' or 'resolved'");
@@ -268,37 +307,37 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
     return send(c, z.array(Decision), listDecisions(db, { status }));
   });
 
-  app.post("/api/decisions/:id/resolve", async (c) => {
-    const body = await readBody(c, ResolveDecisionRequest);
-    const decision = resolveDecision(db, c.req.param("id"), body, donorIdOf(c), now());
-    // A maintainer approving an escalated task is the other way work reaches "merged".
-    const taskId = db.select({ t: decisions.taskId }).from(decisions).where(eq(decisions.id, c.req.param("id"))).get()?.t;
-    if (taskId && db.select({ s: tasks.state }).from(tasks).where(eq(tasks.id, taskId)).get()?.s === "merged") publishMerged(taskId);
-    return send(c, Decision, decision);
-  });
+  // There is deliberately NO donor-reachable "resolve" route: the one way to answer an
+  // escalation is POST /api/maintain/projects/:id/decisions/:decisionId/resolve, which
+  // checks the caller maintains that project.
 
-  app.route("/api/maintain", createMaintainerRoutes(db, { now, token: opts.maintainerToken, github: opts.github, steward: opts.steward, resolveDecision }));
+  /** After a maintainer resolves a decision: approving an escalated task is the other way work reaches "merged". */
+  const afterResolve = (decisionId: string) => {
+    const taskId = db.select({ t: decisions.taskId }).from(decisions).where(eq(decisions.id, decisionId)).get()?.t;
+    if (taskId && db.select({ s: tasks.state }).from(tasks).where(eq(tasks.id, taskId)).get()?.s === "merged") publishMerged(taskId);
+  };
+
+  app.route(
+    "/api/maintain",
+    createMaintainerRoutes(db, { now, requireMaintainerOf: auth.requireMaintainerOf, afterResolve, github: opts.github, steward: opts.steward, resolveDecision }),
+  );
 
   app.post("/api/demo/reset", (c) => {
+    // Wiping the database is a demo convenience: only with demo login on, and only for someone signed in.
+    requireDemoLogin();
+    auth.requireUser(c);
     resetAndSeed(db, now());
     return c.json({ ok: true });
   });
 
   // ================= Maintainer API: hidden tests =================
-  // Auth: the same demo maintainer token as /api/maintain/* (header `x-aloe-maintainer`,
-  // env ALOE_MAINTAINER_TOKEN, default "aloe-maintainer-demo"), compared in constant time. Same idea as the
-  // pairing code: the demo has no maintainer accounts yet. These routes are NOT
-  // under the donor-identity header, because donors must never read hidden tests.
-  // The web app never calls them; hidden tests appear in no web/public response.
+  // Auth: a signed-in maintainer of THIS project (session cookie + project_maintainers row).
+  // Donors must never read hidden tests; the web app never calls these routes, and hidden
+  // tests appear in no web/public response.
 
-  const requireMaintainer = (c: Context) => {
-    const given = c.req.header("x-aloe-maintainer") ?? "";
-    const expected = opts.maintainerToken ?? process.env.ALOE_MAINTAINER_TOKEN ?? "aloe-maintainer-demo";
-    if (!given || !secretsMatch(given, expected)) throw new HttpError(401, "unauthorized", "Maintainer token required");
-  };
   /** "" = project-wide; otherwise a code task of this project that gets its own override. */
   const hiddenScope = (c: Context, projectId: string) => {
-    requireMaintainer(c);
+    auth.requireMaintainerOf(c, projectId);
     requireProject(projectId);
     const taskId = c.req.query("taskId") ?? "";
     if (taskId) {

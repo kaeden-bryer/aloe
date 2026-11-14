@@ -2,11 +2,8 @@
  * Maintainer API (/api/maintain/*): onboarding interview, GitHub issue import
  * into a draft queue, and the decision inbox.
  *
- * Auth (demo): every request needs `x-aloe-maintainer: <token>`, compared in
- * constant time with ALOE_MAINTAINER_TOKEN (default "aloe-maintainer-demo").
- * Like the donor header it is a stand-in for real GitHub sign-in; a valid
- * token can act on any project. Real auth would check "is this user a
- * maintainer of :id" in the same `requireMaintainer` spot.
+ * Auth: a signed-in session whose user maintains the project in the URL
+ * (`requireMaintainerOf`, session.ts). Donors and other projects' maintainers get 403.
  *
  * Safety rule: GitHub issue text is untrusted. It goes only to the steward,
  * which rewrites it into a TaskSpec; the spec lands in `task_drafts`, which
@@ -32,7 +29,6 @@ import {
   type AloeDb,
   type TaskSpec,
 } from "@aloe/core";
-import { secretsMatch } from "./auth.ts";
 import { octokitClient, parseRepoUrl, type GitHubClient } from "./github.ts";
 import { errorBody, HttpError, readBody, send } from "./http.ts";
 import { interviewToBrief, issuesToTaskSpecs } from "./steward/index.ts";
@@ -42,8 +38,10 @@ const { projects, tasks, taskDrafts, events, decisions } = schema;
 
 export interface MaintainerDeps {
   now: () => number;
-  /** Expected value of the x-aloe-maintainer header. */
-  token?: string;
+  /** 401 if signed out, 403 unless the caller maintains `projectId`; returns the caller's user id (session.ts). */
+  requireMaintainerOf: (c: Context, projectId: string) => string;
+  /** Called after a decision is resolved (app.ts publishes newly merged work). */
+  afterResolve?: (decisionId: string) => void;
   /** Injected in tests; defaults to a real Octokit client created per request (so env is read late). */
   github?: GitHubClient;
   steward?: {
@@ -67,10 +65,10 @@ export function createMaintainerRoutes(db: AloeDb, deps: MaintainerDeps) {
   const r = new Hono();
   const steward = deps.steward ?? { interviewToBrief, issuesToTaskSpecs };
 
-  r.use("*", async (c, next) => {
-    const expected = deps.token ?? process.env.ALOE_MAINTAINER_TOKEN ?? "aloe-maintainer-demo";
-    const given = c.req.header("x-aloe-maintainer");
-    if (!given || !secretsMatch(given, expected)) throw new HttpError(401, "unauthorized", "Maintainer token required");
+  // One guard for every project route: you must maintain the project in the URL.
+  // (Checked before the 404 for unknown projects, so outsiders learn nothing about what exists.)
+  r.use("/projects/:id/*", async (c, next) => {
+    deps.requireMaintainerOf(c, c.req.param("id")!);
     await next();
   });
 
@@ -207,7 +205,9 @@ export function createMaintainerRoutes(db: AloeDb, deps: MaintainerDeps) {
     // Scope check: a maintainer URL for project A must not resolve project B's decision.
     const d = db.select({ projectId: decisions.projectId }).from(decisions).where(eq(decisions.id, decisionId)).get();
     if (!d || d.projectId !== p.id) throw new HttpError(404, "not_found", "Decision not found");
-    return send(c, Decision, deps.resolveDecision(db, decisionId, body, `maintainer:${p.id}`, deps.now()));
+    const resolved = deps.resolveDecision(db, decisionId, body, deps.requireMaintainerOf(c, p.id), deps.now());
+    deps.afterResolve?.(decisionId);
+    return send(c, Decision, resolved);
   });
 
   r.all("*", (c) => c.json(errorBody("not_found", "No such API route"), 404));

@@ -11,7 +11,7 @@ export function urlLabel(url: string): string {
   return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
-/** "Aino Virtanen" -> "AV" */
+/** "Kaeden Bryer" -> "KB" */
 export function initials(name: string): string {
   return name
     .split(/\s+/)
