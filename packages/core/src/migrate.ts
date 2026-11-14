@@ -10,6 +10,14 @@ import type Database from "better-sqlite3";
  */
 export function migrate(sqlite: Database.Database): void {
   sqlite.exec(SQL);
+  // CREATE TABLE IF NOT EXISTS never adds columns to an existing table, so a
+  // database made before a column existed needs an explicit ALTER.
+  addColumnIfMissing(sqlite, "projects", "sandbox_image", "TEXT");
+}
+
+function addColumnIfMissing(sqlite: Database.Database, table: string, column: string, type: string): void {
+  const cols = sqlite.pragma(`table_info(${table})`) as { name: string }[];
+  if (!cols.some((c) => c.name === column)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 
 const SQL = /* sql */ `
@@ -26,6 +34,7 @@ CREATE TABLE IF NOT EXISTS projects (
   region TEXT NOT NULL,
   url TEXT NOT NULL,
   repo_url TEXT NOT NULL,
+  sandbox_image TEXT,
   brief TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );

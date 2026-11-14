@@ -126,7 +126,7 @@ export function claimTask(db: AloeDb, input: ClaimInput): ClaimedTask | null {
 
       logEvent(tx, now, "task.claimed", task, donorId, { kind: task.kind, leaseToken, reclaimed });
 
-      const project = tx.select({ repoUrl: projects.repoUrl }).from(projects).where(eq(projects.id, task.projectId)).get();
+      const project = tx.select({ repoUrl: projects.repoUrl, sandboxImage: projects.sandboxImage }).from(projects).where(eq(projects.id, task.projectId)).get();
 
       let review: ClaimedTask["review"];
       let hidden: ClaimedTask["hiddenTests"];
@@ -152,6 +152,7 @@ export function claimTask(db: AloeDb, input: ClaimInput): ClaimedTask | null {
         spec: task.spec,
         leaseToken,
         leaseExpiresAt,
+        ...(project?.sandboxImage ? { sandboxImage: project.sandboxImage } : {}),
         ...(review ? { review } : {}),
         ...(hidden ? { hiddenTests: hidden } : {}),
       };

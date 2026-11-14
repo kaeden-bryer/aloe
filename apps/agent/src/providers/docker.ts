@@ -4,13 +4,14 @@
  * Why a container? The model runs Bash with whatever the repo contains. In a
  * container it only sees the task's worktree (/work) and the task files
  * (/task, read-only), not the donor's home directory, SSH keys or other repos.
- * Network stays open because the model API must be reachable (see
- * docker/sandbox/README.md).
+ * Network stays open for code/review runs because the model API must be
+ * reachable (see docker/sandbox/README.md). Test runs have no model, so they
+ * get `--network none`: a patch's tests can't phone home.
  */
 import { randomBytes } from "node:crypto";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ClaimedTask } from "@aloe/core/contracts";
+import { DEFAULT_SANDBOX_IMAGE, isAllowedSandboxImage, type ClaimedTask } from "@aloe/core/contracts";
 import { run, type RunResult } from "../exec.ts";
 
 export interface SandboxOptions {
@@ -30,8 +31,24 @@ export interface SandboxOptions {
   onLine?: (line: string) => void;
 }
 
-export async function runSandbox(opts: SandboxOptions): Promise<RunResult> {
-  const name = `aloe-${opts.mode}-${randomBytes(4).toString("hex")}`;
+/** Test runs always get a time limit: a patch can contain an infinite loop. */
+export const DEFAULT_TEST_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * The image a task runs in: the project's `sandboxImage` if the server sent one
+ * (and it passes the allowlist), else the donor's default. A name that fails the
+ * allowlist throws, so the task fails and is released instead of running.
+ */
+export function resolveSandboxImage(task: Pick<ClaimedTask, "sandboxImage">, fallback = DEFAULT_SANDBOX_IMAGE): string {
+  if (task.sandboxImage === undefined) return fallback;
+  if (!isAllowedSandboxImage(task.sandboxImage)) {
+    throw new Error(`refusing sandbox image ${JSON.stringify(task.sandboxImage.slice(0, 60))}: not an aloe-sandbox image`);
+  }
+  return task.sandboxImage;
+}
+
+/** The `docker run` argv, separated from runSandbox so tests can check the flags without Docker. */
+export function dockerRunArgs(opts: SandboxOptions, name: string): string[] {
   const args = [
     "run", "--rm", "--name", name,
     // Resource limits, so a runaway test suite can't take the donor's machine down.
@@ -46,7 +63,10 @@ export async function runSandbox(opts: SandboxOptions): Promise<RunResult> {
   if (process.getuid && process.getgid) {
     args.push("--user", `${process.getuid()}:${process.getgid()}`, "-e", "HOME=/tmp");
   }
-  if (opts.mode !== "test") {
+  if (opts.mode === "test") {
+    // No model call here, so no reason for the repo's code to reach the internet.
+    args.push("--network", "none");
+  } else {
     // `-e NAME` with no value copies it from our environment, so the key
     // never appears in the process list (`ps`) the way `-e NAME=value` would.
     args.push("-e", "ANTHROPIC_API_KEY");
@@ -57,16 +77,29 @@ export async function runSandbox(opts: SandboxOptions): Promise<RunResult> {
   } else {
     args.push(opts.image);
   }
+  return args;
+}
+
+export async function runSandbox(opts: SandboxOptions): Promise<RunResult> {
+  const name = `aloe-${opts.mode}-${randomBytes(4).toString("hex")}`;
+  const args = dockerRunArgs(opts, name);
+  const timeoutMs = opts.timeoutMs ?? (opts.mode === "test" ? DEFAULT_TEST_TIMEOUT_MS : undefined);
 
   // Killing the `docker run` client does not reliably stop the container, so
   // on abort (or timeout) we ask the daemon to kill it by name.
+  let timedOut = false;
   const kill = () => void run("docker", ["kill", name]).catch(() => {});
+  const killOnTimeout = () => {
+    timedOut = true;
+    kill();
+  };
   opts.signal.addEventListener("abort", kill, { once: true });
-  const timer = opts.timeoutMs ? setTimeout(kill, opts.timeoutMs) : undefined;
+  const timer = timeoutMs ? setTimeout(killOnTimeout, timeoutMs) : undefined;
   try {
     const res = await run("docker", args, { onLine: opts.onLine });
     opts.signal.throwIfAborted();
-    return res;
+    // Exit 137 alone doesn't say why; the note ends up in the verifier's report.
+    return timedOut ? { ...res, stderr: `${res.stderr}\n[aloe] container killed: ran longer than ${Math.round(timeoutMs! / 1000)}s` } : res;
   } finally {
     clearTimeout(timer);
     opts.signal.removeEventListener("abort", kill);

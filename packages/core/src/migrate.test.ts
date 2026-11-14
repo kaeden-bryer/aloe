@@ -26,4 +26,13 @@ describe("migrate()", () => {
     migrate(sqlite);
     expect(() => migrate(sqlite)).not.toThrow();
   });
+
+  it("adds columns that newer code expects to a database made before them", () => {
+    const { sqlite } = openDb(":memory:");
+    migrate(sqlite);
+    sqlite.exec("ALTER TABLE projects DROP COLUMN sandbox_image"); // pretend this is an old aloe.db
+    migrate(sqlite);
+    const cols = (sqlite.pragma("table_info(projects)") as { name: string }[]).map((c) => c.name);
+    expect(cols).toContain("sandbox_image");
+  });
 });

@@ -111,6 +111,20 @@ describe("claimTask", () => {
     expect(env.getTask(important)).toMatchObject({ state: "leased", leaseDeviceId: "a1", attempts: 1 });
   });
 
+  it("hands out the project's sandbox image on code and verify leases, and omits it when unset", () => {
+    const env = setup();
+    env.addTask("tests");
+    expect(env.claim("a1", T0)).not.toHaveProperty("sandboxImage");
+
+    const env2 = setup();
+    env2.db.update(projects).set({ sandboxImage: "aloe-sandbox-ccf" }).where(eq(projects.id, "p1")).run();
+    env2.addTask("tests");
+    const { verifyTaskId } = aliceSubmits(env2, T0);
+    const verify = env2.claim("b1", T0 + 10)!;
+    expect(verify.id).toBe(verifyTaskId);
+    expect(verify.sandboxImage).toBe("aloe-sandbox-ccf");
+  });
+
   it("puts verify tasks ahead of every code task", () => {
     const env = setup();
     env.addTask("tests", 0);

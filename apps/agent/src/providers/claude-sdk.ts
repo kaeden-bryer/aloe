@@ -18,7 +18,7 @@ import type { RunResult } from "../exec.ts";
 import { applyPatch, diffWorktree, guardGitPointer, withWorktree } from "../git.ts";
 import { runHiddenTests } from "../hidden-tests.ts";
 import { parseReviewReply } from "../prompt.ts";
-import { runSandbox, tail, withTaskDir } from "./docker.ts";
+import { resolveSandboxImage, runSandbox, tail, withTaskDir } from "./docker.ts";
 import type { AgentProvider, CodeResult, VerifyResult } from "./types.ts";
 
 export interface ClaudeSdkOptions {
@@ -51,13 +51,14 @@ export class ClaudeSdkProvider implements AgentProvider {
 
   runCodeTask(task: ClaimedTask, signal: AbortSignal): Promise<CodeResult> {
     const { aloeHome, log } = this.opts;
+    const image = resolveSandboxImage(task, this.image); // before any clone: a bad image fails fast
     return withWorktree(aloeHome, task.repoUrl, task.id, signal, (worktree) =>
       withTaskDir(aloeHome, task, async (taskDir) => {
         const restoreGit = await guardGitPointer(worktree);
         let res: RunResult;
         try {
           res = await runSandbox({
-            image: this.image,
+            image,
             mode: "code",
             worktree,
             taskDir,
@@ -87,6 +88,7 @@ export class ClaudeSdkProvider implements AgentProvider {
     const { aloeHome } = this.opts;
     const review = task.review;
     if (!review) throw new Error("verify task has no submission to review");
+    const image = resolveSandboxImage(task, this.image);
 
     return withWorktree(aloeHome, task.repoUrl, task.id, signal, async (worktree): Promise<VerifyResult> => {
       try {
@@ -101,7 +103,7 @@ export class ClaudeSdkProvider implements AgentProvider {
           // Review first, on a read-only mount, so it sees exactly the patched
           // tree and nothing the test run might generate.
           const reviewRun = await runSandbox({
-            image: this.image,
+            image,
             mode: "review",
             worktree,
             worktreeReadOnly: true,
@@ -117,7 +119,7 @@ export class ClaudeSdkProvider implements AgentProvider {
           let testNote = "no test command in spec";
           if (task.spec.testCommand.trim()) {
             const testRun = await runSandbox({
-              image: this.image,
+              image,
               mode: "test",
               worktree,
               taskDir,
@@ -134,7 +136,7 @@ export class ClaudeSdkProvider implements AgentProvider {
           const hidden = await runHiddenTests({
             worktree,
             hidden: task.hiddenTests,
-            image: this.image,
+            image,
             taskDir,
             signal,
             timeoutMs: this.opts.testTimeoutMs,

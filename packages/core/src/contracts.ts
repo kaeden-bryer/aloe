@@ -109,6 +109,16 @@ export const HiddenTests = z.object({
 });
 export type HiddenTests = z.infer<typeof HiddenTests>;
 
+/**
+ * Which Docker image a project's tasks run in. The server picks it, but the
+ * donor's machine runs it, so the agent only accepts names that look like our
+ * own images (`aloe-sandbox`, `aloe-sandbox-ccf`, optionally `:tag`). Without
+ * this check a hostile server could make donors pull and run any image.
+ */
+export const SANDBOX_IMAGE_PATTERN = /^aloe-sandbox(-[a-z0-9]+)?(:[\w.-]+)?$/;
+export const DEFAULT_SANDBOX_IMAGE = "aloe-sandbox";
+export const isAllowedSandboxImage = (name: string): boolean => name.length <= 100 && SANDBOX_IMAGE_PATTERN.test(name);
+
 export const ClaimedTask = z.object({
   id: z.string(),
   kind: TaskKind,
@@ -120,6 +130,12 @@ export const ClaimedTask = z.object({
   leaseToken: z.number().int(),
   leaseExpiresAt: z.number().int(),
   review: SubmissionForReview.optional(),
+  /**
+   * The project's sandbox image, when it needs one beyond the default (e.g. deps baked in).
+   * Plain string here on purpose: the agent checks it with `isAllowedSandboxImage` and
+   * refuses the task, instead of the whole claim response failing to parse.
+   */
+  sandboxImage: z.string().optional(),
   /** Only ever present on verify leases. Code leases (the patch author) never get these. */
   hiddenTests: HiddenTests.optional(),
 });

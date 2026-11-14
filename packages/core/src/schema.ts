@@ -25,6 +25,8 @@ export const projects = sqliteTable("projects", {
   region: text("region").notNull(),
   url: text("url").notNull(),
   repoUrl: text("repo_url").notNull(),
+  /** Docker image for this project's tasks (see SANDBOX_IMAGE_PATTERN). NULL = the agent's default. */
+  sandboxImage: text("sandbox_image"),
   /** Project brief the steward wrote from the maintainer interview. Shared memory for agents. */
   brief: text("brief").notNull().default(""),
   createdAt: integer("created_at").notNull(),

@@ -14,6 +14,16 @@ Errors: `{ error, code }` (`ApiError`) with status 400 / 401 / 404 / 409 / 503 (
 | POST | `/api/agent/tasks/:id/submit` | `SubmitRequest` | `{ submissionId, verifyTaskId }` or 409 |
 | POST | `/api/agent/tasks/:id/verify` | `VerifyResultRequest` | `{ outcome }` or 409 |
 
+### Sandbox image
+
+`ClaimedTask.sandboxImage?: string` is the project's Docker image for every run of
+its tasks (code, review, tests, hidden tests); absent means the agent's default
+(`aloe-sandbox`). The agent accepts only names matching
+`SANDBOX_IMAGE_PATTERN` (`/^aloe-sandbox(-[a-z0-9]+)?(:[\w.-]+)?$/`) and refuses
+the task otherwise, so a server can't make donors run arbitrary images. Test-mode
+containers run with `--network none`; code and review runs keep the network for the
+model API.
+
 ### Hidden tests
 
 `ClaimedTask.hiddenTests?: HiddenTests` is present **only on verify leases**
