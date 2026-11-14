@@ -462,6 +462,8 @@ export const StagingStatus = z.object({
   branch: z.string(),
   /** The one open PR for this project, if it has been created. */
   prUrl: z.string().nullable(),
+  /** True once that PR was merged on GitHub: its work is "released". The next publish opens a new PR. */
+  prMerged: z.boolean(),
   items: z.array(
     z.object({
       taskId: z.string(),
@@ -471,6 +473,8 @@ export const StagingStatus = z.object({
       commitSha: z.string().nullable(),
       attempts: z.number().int(),
       updatedAt: z.number().int(),
+      /** ms when the PR holding this change was merged on GitHub; null = not released yet. */
+      releasedAt: z.number().int().nullable(),
     }),
   ),
 });

@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { and, asc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or } from "drizzle-orm";
 import { schema, type AloeDb, type StagingStatus } from "@aloe/core";
 import { authEnv, cloneDirFor, runGit, scrub, type GitRunner } from "./git.ts";
 import { octokitClient, type GithubClient } from "./github.ts";
@@ -61,6 +61,13 @@ export interface StagingPublisher {
   onMerged(taskId: string): Promise<void>;
   /** Publish pending/failed rows (and any missing PR) for every project. */
   retryPending(): Promise<void>;
+  /**
+   * Ask GitHub whether the project's staging PR was merged; if so mark its rows released.
+   * Throttled per PR and never throws: any failure just means "not yet".
+   */
+  checkReleased(projectId: string): Promise<void>;
+  /** Run checkReleased for every project on a timer. Unref'd, so it never keeps the process alive. Returns a stop function. */
+  watchReleases(intervalMs: number): () => void;
   /** Resolves when all queued publishes have finished. For tests and shutdown. */
   idle(): Promise<void>;
 }
@@ -137,6 +144,49 @@ export function createStagingPublisher(cfg: PublisherConfig): StagingPublisher {
     await Promise.all(ids.map((id) => serialize(repoKey(id), () => publishProject(id))));
   }
 
+  // ---- releases: has GitHub merged the PR our rows are in? ----
+  const RELEASE_CHECK_EVERY_MS = 15_000;
+  const lastChecked = new Map<string, number>(); // prUrl -> when we last asked GitHub
+
+  async function checkReleased(projectId: string): Promise<void> {
+    try {
+      const open = db
+        .select()
+        .from(stagingPublishes)
+        .where(and(eq(stagingPublishes.projectId, projectId), eq(stagingPublishes.status, "published"), isNull(stagingPublishes.releasedAt), isNotNull(stagingPublishes.prUrl)))
+        .all();
+      const project = db.select({ repoUrl: projects.repoUrl }).from(projects).where(eq(projects.id, projectId)).get();
+      const repo = project ? resolveRepo(project.repoUrl) : null;
+      if (!repo) return;
+      for (const url of new Set(open.map((r) => r.prUrl!))) {
+        const number = Number(/\/pull\/(\d+)/.exec(url)?.[1]);
+        const last = lastChecked.get(url);
+        if (!number || (last !== undefined && now() - last < RELEASE_CHECK_EVERY_MS)) continue;
+        // Stamp before the await so the 5 s web polling can't start a second request meanwhile.
+        lastChecked.set(url, now());
+        const pr = await github.getPr({ owner: repo.owner, repo: repo.repo, number });
+        if (!pr.merged) continue;
+        const mergedAt = pr.mergedAt ?? now();
+        // Only rows published before the merge are in it; later commits belong to the next PR.
+        db.update(stagingPublishes)
+          .set({ releasedAt: mergedAt })
+          .where(and(eq(stagingPublishes.projectId, projectId), eq(stagingPublishes.prUrl, url), isNull(stagingPublishes.releasedAt), lte(stagingPublishes.updatedAt, mergedAt)))
+          .run();
+      }
+    } catch (e) {
+      log(`release check failed: ${scrub(String(e), token)}`);
+    }
+  }
+
+  function watchReleases(intervalMs: number): () => void {
+    const timer = setInterval(() => {
+      const ids = db.selectDistinct({ id: stagingPublishes.projectId }).from(stagingPublishes).where(isNull(stagingPublishes.releasedAt)).all();
+      for (const { id } of ids) void checkReleased(id);
+    }, intervalMs);
+    timer.unref();
+    return () => clearInterval(timer);
+  }
+
   // ---- the actual work ----
 
   async function publishProject(projectId: string): Promise<void> {
@@ -187,8 +237,8 @@ export function createStagingPublisher(cfg: PublisherConfig): StagingPublisher {
     }
 
     // PR: one per project. Runs even with nothing new if an earlier PR call failed.
-    const live = db.select().from(stagingPublishes).where(and(eq(stagingPublishes.projectId, projectId), eq(stagingPublishes.status, "published"))).all();
-    if (live.length === 0) return;
+    const live = db.select().from(stagingPublishes).where(and(eq(stagingPublishes.projectId, projectId), eq(stagingPublishes.status, "published"), isNull(stagingPublishes.releasedAt))).all();
+    if (live.length === 0) return; // everything published so far is already released (merged PR)
     if (!base) {
       try {
         ({ base } = await prepareBranch(repo));
@@ -307,7 +357,7 @@ export function createStagingPublisher(cfg: PublisherConfig): StagingPublisher {
     };
   }
 
-  return { onMerged, retryPending, idle: async () => void (await Promise.all([...inFlight])) };
+  return { onMerged, retryPending, checkReleased, watchReleases, idle: async () => void (await Promise.all([...inFlight])) };
 }
 
 /** Collapse whitespace so untrusted names can't inject extra commit-message lines. */
@@ -325,10 +375,13 @@ export function stagingStatus(db: AloeDb, projectId: string, enabled: boolean): 
     .where(eq(stagingPublishes.projectId, projectId))
     .orderBy(asc(stagingPublishes.createdAt))
     .all();
+  const latest = rows.map((x) => x.r).filter((r) => r.prUrl).at(-1);
   return {
     enabled,
     branch: STAGING_BRANCH,
-    prUrl: rows.map((x) => x.r.prUrl).filter(Boolean).at(-1) ?? null,
+    prUrl: latest?.prUrl ?? null,
+    // The newest PR we know of is merged iff its rows were released.
+    prMerged: latest?.releasedAt != null,
     items: rows.map(({ r, title }) => ({
       taskId: r.taskId,
       title,
@@ -337,6 +390,7 @@ export function stagingStatus(db: AloeDb, projectId: string, enabled: boolean): 
       commitSha: r.commitSha,
       attempts: r.attempts,
       updatedAt: r.updatedAt,
+      releasedAt: r.releasedAt,
     })),
   };
 }

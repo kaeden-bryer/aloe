@@ -92,7 +92,7 @@ GitHub sign-in (Better Auth) will replace only the demo login below; the session
 | GET | `/api/causes` (public) | | `Cause[]` |
 | GET | `/api/projects?cause=<CauseId>` (public) | | `ProjectSummary[]` (`backing` is false when signed out) |
 | GET | `/api/projects/:id` (public) | | `ProjectDetail` |
-| GET | `/api/projects/:id/staging` (public) | | `StagingStatus` (publish status of merged tasks on the fork's `aloe/staging` branch, plus the PR url; `enabled: false` when `ALOE_PUBLISH_STAGING` is off) |
+| GET | `/api/projects/:id/staging` (public) | | `StagingStatus` (publish status of merged tasks on the fork's `aloe/staging` branch, plus the PR url; `enabled: false` when `ALOE_PUBLISH_STAGING` is off). `prMerged` is true once that PR was merged on GitHub, and each item then has `releasedAt` (ms) set. Calling the route also nudges a throttled GitHub check (at most once per PR per 15 s); a server timer checks every 20 s too. A donor dashboard project counts as `released` (Shipped) when it has a release-category merge or one of the donor's merged tasks was in a merged PR |
 | POST | `/api/projects/:id/back` | | `{ ok: true }` |
 | DELETE | `/api/projects/:id/back` | | `{ ok: true }` |
 | GET | `/api/me` | | `Me` |

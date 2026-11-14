@@ -18,6 +18,8 @@ export interface GithubClient {
   /** Open a PR from `branch` into `base`, both on the same (fork) repo. */
   createPr(args: { owner: string; repo: string; branch: string; base: string; title: string; body: string }): Promise<PullRequestRef>;
   updatePr(args: { owner: string; repo: string; number: number; body: string }): Promise<PullRequestRef>;
+  /** Read-only: has this PR been merged, and when (ms)? */
+  getPr(args: { owner: string; repo: string; number: number }): Promise<{ merged: boolean; mergedAt: number | null }>;
 }
 
 export function octokitClient(token: string): GithubClient {
@@ -35,6 +37,10 @@ export function octokitClient(token: string): GithubClient {
     async updatePr({ owner, repo, number, body }) {
       const { data } = await octokit.pulls.update({ owner, repo, pull_number: number, body });
       return { number: data.number, url: data.html_url };
+    },
+    async getPr({ owner, repo, number }) {
+      const { data } = await octokit.pulls.get({ owner, repo, pull_number: number });
+      return { merged: data.merged === true, mergedAt: data.merged_at ? Date.parse(data.merged_at) : null };
     },
   };
 }

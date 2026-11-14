@@ -11,14 +11,14 @@ export function StagingLink({ projectId, compact = false }: { projectId: string;
   if (!url || !/^https?:\/\//.test(url)) return null;
   const link = (
     <a className="btn-outline" href={url} target="_blank" rel="noreferrer" style={{ display: "inline-block", textDecoration: "none" }}>
-      View PR on GitHub
+      {data?.prMerged ? "Merged on GitHub ✓" : "View PR on GitHub"}
     </a>
   );
   if (compact) return <p style={{ margin: "8px 0" }}>{link}</p>;
   return (
     <div className="side-card">
       <h3>Pull request</h3>
-      <p>Merged work is collected in one pull request on the project's fork.</p>
+      <p>{data?.prMerged ? "This pull request was merged: its work is released." : "Merged work is collected in one pull request on the project's fork."}</p>
       <div style={{ marginTop: 10 }}>{link}</div>
     </div>
   );

@@ -111,7 +111,11 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
   };
   const publisher = opts.publisher === undefined ? publisherFromEnv(db, now) : opts.publisher;
   // On a real boot, retry anything a previous run left pending or failed.
-  if (opts.publisher === undefined && publisher) void publisher.retryPending();
+  if (opts.publisher === undefined && publisher) {
+    void publisher.retryPending();
+    // Notice a merged PR even if nobody has the project page open (donor dashboard stays fresh).
+    publisher.watchReleases(20_000);
+  }
   /**
    * Called only AFTER the merge transaction has committed. Fire and forget:
    * a GitHub outage must never fail or slow the merge. Failures are recorded
@@ -270,6 +274,8 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
 
   app.get("/api/projects/:id/staging", (c) => {
     requireProject(c.req.param("id"));
+    // Fire and forget: the answer below is what we know now; the web polls and sees the update next time.
+    void publisher?.checkReleased(c.req.param("id"));
     return send(c, StagingStatus, stagingStatus(db, c.req.param("id"), publisher !== null));
   });
 

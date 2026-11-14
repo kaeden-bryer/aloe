@@ -8,8 +8,10 @@ import { createApp } from "../app.ts";
 import { resetAndSeed } from "../seed.ts";
 import type { GithubClient } from "./github.ts";
 import { runGit, type GitRunner } from "./git.ts";
-import { createStagingPublisher, parseGithubRepo, STAGING_BRANCH, type StagingPublisher } from "./publisher.ts";
-import { stagingPublishes } from "./schema.ts";
+import { createStagingPublisher, parseGithubRepo, STAGING_BRANCH, stagingStatus, type StagingPublisher } from "./publisher.ts";
+import { ensurePublishTable, stagingPublishes } from "./schema.ts";
+import { buildDashboard } from "../dashboard.ts";
+import { eq } from "drizzle-orm";
 
 const { projects, donors, devices, tasks, submissions, verifications } = schema;
 const T0 = Date.UTC(2026, 10, 14, 12, 0, 0);
@@ -44,24 +46,32 @@ function makePatch(remoteUrl: string, edit: (dir: string) => void) {
 }
 
 class FakeGithub implements GithubClient {
-  prs: { number: number; body: string; base: string; branch: string }[] = [];
+  prs: { number: number; body: string; base: string; branch: string; merged?: boolean; mergedAt?: number }[] = [];
   calls: string[] = [];
   down = false;
   async findOpenPr() {
     this.calls.push("find");
     if (this.down) throw new Error("GitHub is down");
-    const pr = this.prs[0];
+    const pr = this.prs.find((p) => !p.merged); // like GitHub: a merged PR is closed, so not "open"
     return pr ? { number: pr.number, url: `https://github.com/o/r/pull/${pr.number}` } : null;
   }
   async createPr(a: { base: string; branch: string; body: string }) {
     this.calls.push("create");
-    this.prs.push({ number: 7, body: a.body, base: a.base, branch: a.branch });
-    return { number: 7, url: "https://github.com/o/r/pull/7" };
+    const number = 7 + this.prs.length;
+    this.prs.push({ number, body: a.body, base: a.base, branch: a.branch });
+    return { number, url: `https://github.com/o/r/pull/${number}` };
   }
   async updatePr(a: { number: number; body: string }) {
     this.calls.push("update");
-    this.prs[0]!.body = a.body;
+    this.prs.find((p) => p.number === a.number)!.body = a.body;
     return { number: a.number, url: `https://github.com/o/r/pull/${a.number}` };
+  }
+  getCalls = 0;
+  async getPr(a: { number: number }) {
+    this.getCalls++;
+    if (this.down) throw new Error("GitHub is down");
+    const pr = this.prs.find((p) => p.number === a.number);
+    return { merged: !!pr?.merged, mergedAt: pr?.mergedAt ?? null };
   }
 }
 
@@ -71,8 +81,10 @@ let github: FakeGithub;
 let gitCalls: string[][];
 let publisher: StagingPublisher;
 let n = 0;
+let clock = T0; // injected into the publisher so tests control time
 
 beforeEach(() => {
+  clock = T0;
   const o = openDb(":memory:");
   migrate(o.sqlite);
   db = o.db;
@@ -85,7 +97,7 @@ beforeEach(() => {
   };
   publisher = createStagingPublisher({
     db,
-    now: () => T0,
+    now: () => clock,
     github,
     token: TOKEN,
     cacheDir: tmp("cache"),
@@ -252,6 +264,107 @@ describe("staging publisher", () => {
     expect(statusOf(a).status).toBe("published");
     expect(statusOf(b).status).toBe("published");
     expect(sh(remote.bare, "rev-list", "--count", STAGING_BRANCH)).toBe("3");
+  });
+});
+
+describe("releases", () => {
+  const publishOne = async (title: string, file: string) => {
+    const id = mergedTask(title, makePatch(remote.url, (d) => writeFileSync(join(d, file), "x\n")));
+    await publisher.onMerged(id);
+    return id;
+  };
+  const mergePr = (i = 0, at = clock + 1000) => Object.assign(github.prs[i]!, { merged: true, mergedAt: at });
+
+  it("marks the PR's rows released when GitHub says it merged", async () => {
+    const id = await publishOne("One", "r1.txt");
+    await publisher.checkReleased("p1");
+    expect(statusOf(id).releasedAt).toBeNull(); // open PR: nothing yet
+    mergePr();
+    clock += 20_000; // past the throttle
+    await publisher.checkReleased("p1");
+    expect(statusOf(id).releasedAt).toBe(T0 + 1000);
+    const st = stagingStatus(db, "p1", true);
+    expect(st).toMatchObject({ prMerged: true });
+    expect(st.items[0]!.releasedAt).toBe(T0 + 1000);
+  });
+
+  it("asks GitHub at most once per 15 s per PR", async () => {
+    await publishOne("One", "r1.txt");
+    await publisher.checkReleased("p1");
+    await publisher.checkReleased("p1");
+    expect(github.getCalls).toBe(1);
+    clock += 15_000;
+    await publisher.checkReleased("p1");
+    expect(github.getCalls).toBe(2);
+  });
+
+  it("swallows GitHub errors and leaves rows unreleased", async () => {
+    const id = await publishOne("One", "r1.txt");
+    mergePr();
+    github.down = true;
+    await expect(publisher.checkReleased("p1")).resolves.toBeUndefined();
+    expect(statusOf(id).releasedAt).toBeNull();
+    github.down = false;
+    clock += 20_000;
+    await publisher.checkReleased("p1"); // recovers on the next check
+    expect(statusOf(id).releasedAt).not.toBeNull();
+  });
+
+  it("opens a NEW PR for work published after the old one merged, and only the new work is released later", async () => {
+    const a = await publishOne("Old", "r1.txt");
+    mergePr(0, T0 + 500);
+    clock += 20_000;
+    await publisher.checkReleased("p1");
+    expect(statusOf(a).releasedAt).toBe(T0 + 500);
+
+    const b = await publishOne("New", "r2.txt");
+    expect(github.calls.at(-1)).toBe("create");
+    expect(github.prs).toHaveLength(2);
+    expect(github.prs[1]!.body).toContain("New");
+    expect(github.prs[1]!.body).not.toContain("Old");
+    expect(statusOf(b).prUrl).toBe("https://github.com/o/r/pull/8");
+    expect(statusOf(a).prUrl).toBe("https://github.com/o/r/pull/7"); // released rows keep their PR
+    expect(stagingStatus(db, "p1", true)).toMatchObject({ prUrl: "https://github.com/o/r/pull/8", prMerged: false });
+    expect(statusOf(b).releasedAt).toBeNull();
+  });
+
+  it("shows Shipped on the dashboard only for the donor and project whose work merged", async () => {
+    resetAndSeed(db, T0);
+    const pub = createStagingPublisher({ db, now: () => clock, github, cacheDir: tmp("cache-dash"), resolveRepo: () => ({ owner: "o", repo: "r", cloneUrl: remote.url }) });
+    // Hand-made ledger row: demo-donor's merged task on one project, already published in PR 7.
+    const ev = db.select().from(schema.events).all().filter((e) => e.type === "task.merged" && e.donorId === "demo-donor");
+    expect(ev.length).toBeGreaterThan(0);
+    const mine = ev[0]!;
+    const others = db.select().from(schema.events).all().filter((e) => e.type === "task.merged" && e.donorId !== "demo-donor" && e.projectId === mine.projectId);
+    const t = db.select().from(tasks).where(eq(tasks.id, mine.taskId!)).get()!;
+    db.insert(stagingPublishes).values({ taskId: t.id, projectId: t.projectId, submissionId: "s", status: "published", prUrl: "https://github.com/o/r/pull/7", createdAt: T0, updatedAt: T0 }).run();
+    github.prs.push({ number: 7, body: "", base: "main", branch: STAGING_BRANCH });
+    const dash = (donor: string) => buildDashboard(db, donor, T0).landed.find((l) => l.projectId === mine.projectId)?.released;
+
+    const before = dash("demo-donor");
+    await pub.checkReleased(t.projectId); // not merged yet
+    expect(dash("demo-donor")).toBe(before);
+
+    github.prs[0]!.merged = true;
+    github.prs[0]!.mergedAt = T0 + 1;
+    clock += 20_000;
+    await pub.checkReleased(t.projectId);
+    expect(dash("demo-donor")).toBe(true);
+    // A donor with no merged work in that ledger row is not marked shipped by it.
+    if (others.length === 0) expect(dash("demo-donor-2")).not.toBe(true);
+    // Other projects of the same donor are unaffected.
+    const elsewhere = buildDashboard(db, "demo-donor", T0).landed.filter((l) => l.projectId !== mine.projectId);
+    expect(elsewhere.every((l) => l.released === (l.projectId === mine.projectId))).toBe(true);
+  });
+});
+
+describe("ledger migration", () => {
+  it("adds released_at to a table made before the column existed", () => {
+    const o = openDb(":memory:");
+    o.sqlite.exec("CREATE TABLE staging_publishes (task_id TEXT PRIMARY KEY NOT NULL, project_id TEXT NOT NULL, submission_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', error TEXT, commit_sha TEXT, pr_url TEXT, attempts INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
+    ensurePublishTable(o.db);
+    ensurePublishTable(o.db); // idempotent
+    expect(o.sqlite.prepare("PRAGMA table_info(staging_publishes)").all().map((c: any) => c.name)).toContain("released_at");
   });
 });
 

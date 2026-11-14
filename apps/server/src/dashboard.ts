@@ -5,6 +5,7 @@
  */
 import { and, count, desc, eq, gt, gte } from "drizzle-orm";
 import { schema, type AloeDb, type Dashboard, type TaskCategory } from "@aloe/core";
+import { releasedTaskIds } from "./publish/schema.ts";
 import { backedProjectIds, listDecisions } from "./views.ts";
 import { addDays, ago, dayLabels, startOfDay, startOfWeek, weekLabel, DAY_MS } from "./time.ts";
 
@@ -93,6 +94,8 @@ export function buildDashboard(db: AloeDb, donorId: string, now: number): Dashbo
     .where(and(eq(events.type, "task.merged"), gte(events.ts, weekStart)))
     .all();
   const landedIds = [...new Set([...backed, ...mergedThisWeek.map((e) => e.projectId!).filter(Boolean)])];
+  // "Shipped" also when this donor's merged work was in a staging PR that got merged on GitHub.
+  const releasedTasks = releasedTaskIds(db);
   const landed = landedIds.flatMap((projectId) => {
     const p = projectInfo.get(projectId);
     if (!p) return [];
@@ -105,7 +108,9 @@ export function buildDashboard(db: AloeDb, donorId: string, now: number): Dashbo
         emoji: p.emoji,
         merged,
         share: projectMerges.length ? merged / projectMerges.length : 0,
-        released: projectMerges.some((m) => m.taskId && taskInfo.get(m.taskId)?.spec.category === "release"),
+        released:
+          projectMerges.some((m) => m.taskId && taskInfo.get(m.taskId)?.spec.category === "release") ||
+          merges.some((m) => m.projectId === projectId && m.taskId && releasedTasks.has(m.taskId)),
       },
     ];
   });
