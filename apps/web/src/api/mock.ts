@@ -304,6 +304,10 @@ function route(method: string, url: URL, body: unknown): Reply {
     return { status: 503, json: { error: "Email isn't set up yet: add RESEND_API_KEY to .env to send real emails.", code: "not_configured" } };
   }
   if (method === "GET" && path === "/api/decisions") return ok(openDecisions());
+  // Publishing is off in mock mode, so the staging status is always empty.
+  if (method === "GET" && /^\/api\/projects\/[^/]+\/staging$/.test(path)) {
+    return ok({ enabled: false, branch: "aloe/staging", prUrl: null, items: [] });
+  }
   if (method === "POST" && path === "/api/demo/reset") {
     state = { ...freshState(), userId: state.userId }; // a reset doesn't sign you out
     save();

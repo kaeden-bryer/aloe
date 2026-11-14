@@ -11,14 +11,13 @@
  *  - Patch contents are untrusted data: applied with `git apply` only, with
  *    hooks disabled, and never copied into the PR body.
  */
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, asc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { schema, type AloeDb, type StagingStatus } from "@aloe/core";
-import { authEnv, runGit, scrub, type GitRunner } from "./git.ts";
+import { authEnv, cloneDirFor, runGit, scrub, type GitRunner } from "./git.ts";
 import { octokitClient, type GithubClient } from "./github.ts";
 import { ensurePublishTable, stagingPublishes } from "./schema.ts";
 
@@ -44,6 +43,8 @@ export interface PublisherConfig {
   authorName?: string;
   authorEmail?: string;
   git?: GitRunner;
+  /** Branch that aloe/staging starts from and the PR targets. Unset = the repo's default branch. */
+  stagingBase?: string;
   resolveRepo?: (repoUrl: string) => RepoRef | null;
   /** Called with errors we swallow, so they are visible in logs. */
   log?: (msg: string) => void;
@@ -74,6 +75,7 @@ export function publisherFromEnv(db: AloeDb, now: () => number, env = process.en
     token,
     github: octokitClient(token),
     cacheDir: env.ALOE_GIT_CACHE || undefined,
+    stagingBase: env.ALOE_STAGING_BASE || undefined,
     authorName: env.ALOE_GIT_AUTHOR_NAME || undefined,
     authorEmail: env.ALOE_GIT_AUTHOR_EMAIL || undefined,
     log: (m) => console.error(`[publish] ${m}`),
@@ -205,7 +207,7 @@ export function createStagingPublisher(cfg: PublisherConfig): StagingPublisher {
 
   /** Clone/fetch, then check out aloe/staging at the remote tip (or fork it off the default branch). */
   async function prepareBranch(repo: RepoRef): Promise<{ dir: string; base: string }> {
-    const dir = join(cacheDir, `${createHash("sha1").update(repo.cloneUrl).digest("hex").slice(0, 10)}-${repo.repo}`);
+    const dir = cloneDirFor(cacheDir, repo.cloneUrl, repo.repo);
     const g = (args: string[], env?: Record<string, string>) => git(["-c", "core.hooksPath=/dev/null", ...args], { cwd: dir, env });
     if (!existsSync(join(dir, ".git"))) {
       await rm(dir, { recursive: true, force: true });
@@ -215,7 +217,12 @@ export function createStagingPublisher(cfg: PublisherConfig): StagingPublisher {
     await g(["clean", "-fdq"]);
     await g(["fetch", "--quiet", "--prune", "origin"], authEnv(token));
     await g(["remote", "set-head", "origin", "--auto"], authEnv(token)).catch(() => {});
-    const base = (await g(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).replace(/^origin\//, "");
+    // A configured base (e.g. aloe/demo-base) wins over the default branch, so a live
+    // merge of the PR can only ever land there and never on the fork's trunk.
+    const base = cfg.stagingBase ?? (await g(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])).replace(/^origin\//, "");
+    if (cfg.stagingBase) await g(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${base}`]).catch(() => {
+      throw new Error(`Staging base branch ${base} does not exist on the remote`);
+    });
     const remoteStaging = await g(["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${STAGING_BRANCH}`]).then(() => true, () => false);
     // -B resets the local branch to the remote tip, discarding any leftovers from a failed run.
     await g(["checkout", "--quiet", "-B", STAGING_BRANCH, remoteStaging ? `origin/${STAGING_BRANCH}` : `origin/${base}`]);

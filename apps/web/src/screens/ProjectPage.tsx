@@ -4,6 +4,7 @@ import type { ProjectDetail } from "@aloe/core/contracts";
 import { useAuth, useCauses, useMe, useProject, useToggleBacking } from "../api/hooks";
 import { DecisionOptions } from "../components/DecisionOptions";
 import { CheckIcon, PlusIcon, WarningIcon } from "../components/Icons";
+import { StagingLink } from "../components/StagingLink";
 import { StatusPill } from "../components/StatusPill";
 import { useToast } from "../components/Toast";
 import { CAUSE_COVER, REGISTRY_URL, TASK_STATE_VIEW } from "../lib/catalog";
@@ -155,6 +156,9 @@ function ProjectBody({ p }: { p: ProjectDetail }) {
                 </div>
               )}
             </div>
+
+            {/* The PR is public on GitHub, so everyone sees the link (unlike the maintainer tools). */}
+            <StagingLink projectId={p.id} />
 
             {/* Only this project's maintainers see the way in; the server checks it again on every call. */}
             {auth?.maintainerOf.includes(p.id) && (

@@ -19,6 +19,7 @@ import {
   Me,
   ProjectDetail,
   ProjectSummary,
+  ResetDemoResponse,
   type CauseId,
   WeeklyEmailSendResponse,
   type DonorSettings,
@@ -90,5 +91,6 @@ export const api = {
   demoUsers: () => request("GET", "/api/auth/demo-users", z.array(DemoUser)),
   demoLogin: (userId: string) => request("POST", "/api/auth/demo-login", AuthMe, { userId }),
   logout: () => request("POST", "/api/auth/logout", Ok),
-  resetDemo: () => request("POST", "/api/demo/reset", Ok),
+  // `github: true` also resets the demo fork on GitHub (server refuses unless configured).
+  resetDemo: (github?: boolean) => request("POST", "/api/demo/reset", ResetDemoResponse, github ? { github: true } : undefined),
 };

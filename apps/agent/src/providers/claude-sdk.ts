@@ -18,6 +18,7 @@ import type { RunResult } from "../exec.ts";
 import { applyPatch, diffWorktree, guardGitPointer, withWorktree } from "../git.ts";
 import { runHiddenTests } from "../hidden-tests.ts";
 import { parseReviewReply } from "../prompt.ts";
+import { effectiveMaxTurns, turnCeiling } from "../turns.ts";
 import { resolveSandboxImage, runSandbox, tail, withTaskDir } from "./docker.ts";
 import type { AgentProvider, CodeResult, VerifyResult } from "./types.ts";
 
@@ -45,8 +46,13 @@ export class ClaudeSdkProvider implements AgentProvider {
       );
     }
     this.image = opts.image ?? process.env.ALOE_SANDBOX_IMAGE ?? "aloe-sandbox";
-    this.env = { ALOE_MAX_TURNS: String(opts.maxTurns ?? 30) };
+    this.env = {};
     if (process.env.ALOE_MODEL) this.env.ALOE_MODEL = process.env.ALOE_MODEL;
+  }
+
+  /** Container env for one task: the turn cap is min(spec.maxTurns, donor ceiling), same for code and review runs. */
+  private envFor(task: ClaimedTask): Record<string, string> {
+    return { ...this.env, ALOE_MAX_TURNS: String(effectiveMaxTurns(task.spec, turnCeiling(this.opts.maxTurns))) };
   }
 
   runCodeTask(task: ClaimedTask, signal: AbortSignal): Promise<CodeResult> {
@@ -63,7 +69,7 @@ export class ClaudeSdkProvider implements AgentProvider {
             worktree,
             taskDir,
             signal,
-            env: this.env,
+            env: this.envFor(task),
             onLine: (line) => {
               if (!line.startsWith("{")) log(`  | ${line}`); // progress; the final JSON line is parsed below
             },
@@ -109,7 +115,7 @@ export class ClaudeSdkProvider implements AgentProvider {
             worktreeReadOnly: true,
             taskDir,
             signal,
-            env: this.env,
+            env: this.envFor(task),
           });
           const verdict = reviewRun.code === 0 ? parseReviewReply(lastLine(reviewRun.stdout)) : null;
 

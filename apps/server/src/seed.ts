@@ -10,6 +10,7 @@ import { pathToFileURL } from "node:url";
 import { count, eq } from "drizzle-orm";
 import { ESCALATION_OPTIONS, newId, schema, type AloeDb, type TaskSpec, type TaskState } from "@aloe/core";
 import { CCF_BRIEF, CCF_DESIGN, CCF_REPO_URL, CCF_SANDBOX_IMAGE, CCF_TASKS } from "./seed-ccf.ts";
+import { ensurePublishTable, stagingPublishes } from "./publish/schema.ts";
 import { DONORS, MAINTAINERS, PROJECT_EXTRAS, PROJECTS, CAUSES, type SeedTaskSpec } from "./seed-data.ts";
 
 const MIN = 60_000;
@@ -22,7 +23,11 @@ const SEED_LEASE_MS = 45 * MIN;
 type Tx = Parameters<Parameters<AloeDb["transaction"]>[0]>[0];
 
 export function resetAndSeed(db: AloeDb, now: number): void {
+  // The publish ledger has no foreign keys (see publish/schema.ts), so it is cleared on its own:
+  // stale rows would otherwise make the staging status show tasks from a previous demo run.
+  ensurePublishTable(db);
   db.transaction((tx) => {
+    tx.delete(stagingPublishes).run();
     // Keep agents that were paired for real (not the seeded ones), so a reset in the
     // middle of a demo doesn't log out the agents running in other terminals.
     const paired = tx

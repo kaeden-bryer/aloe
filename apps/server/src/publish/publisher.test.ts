@@ -220,6 +220,31 @@ describe("staging publisher", () => {
     expect(gitCalls.flat().join(" ")).not.toContain(Buffer.from(`x-access-token:${TOKEN}`).toString("base64"));
   });
 
+  it("with stagingBase, branches from it, opens the PR against it, and leaves main alone", async () => {
+    sh(remote.seed, "push", "--quiet", remote.bare, "main:aloe/demo-base");
+    const based = createStagingPublisher({
+      db, now: () => T0, github, token: TOKEN, cacheDir: tmp("cache-base"), stagingBase: "aloe/demo-base",
+      resolveRepo: () => ({ owner: "o", repo: "r", cloneUrl: remote.url }),
+    });
+    const id = mergedTask("On demo base", makePatch(remote.url, (d) => writeFileSync(join(d, "b.txt"), "x\n")));
+    await based.onMerged(id);
+    expect(statusOf(id).status).toBe("published");
+    expect(github.prs[0]).toMatchObject({ base: "aloe/demo-base", branch: STAGING_BRANCH });
+    expect(sh(remote.bare, "rev-list", "--count", "main")).toBe("1");
+  });
+
+  it("with a stagingBase that does not exist on the remote, fails the row instead of guessing", async () => {
+    const based = createStagingPublisher({
+      db, now: () => T0, github, cacheDir: tmp("cache-nobase"), stagingBase: "aloe/missing",
+      resolveRepo: () => ({ owner: "o", repo: "r", cloneUrl: remote.url }),
+    });
+    const id = mergedTask("No base", makePatch(remote.url, (d) => writeFileSync(join(d, "b.txt"), "x\n")));
+    await based.onMerged(id);
+    expect(statusOf(id).status).toBe("failed");
+    expect(statusOf(id).error).toMatch(/does not exist/);
+    expect(github.prs).toHaveLength(0);
+  });
+
   it("serializes two simultaneous merges for one repo", async () => {
     const a = mergedTask("A", makePatch(remote.url, (d) => writeFileSync(join(d, "a2.txt"), "a\n")));
     const b = mergedTask("B", makePatch(remote.url, (d) => writeFileSync(join(d, "b2.txt"), "b\n")));

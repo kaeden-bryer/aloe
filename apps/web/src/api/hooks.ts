@@ -140,8 +140,10 @@ export function useSignOut() {
 export function useResetDemo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.resetDemo,
+    mutationFn: (github?: boolean) => api.resetDemo(github),
     // Everything cached belongs to the old demo state, so drop it all (but keep who is signed in: a reset doesn't sign you out).
-    onSuccess: () => qc.removeQueries({ predicate: (q) => q.queryKey[0] !== keys.auth[0] }),
+    // The GitHub variant stays on the Settings page to show its result, so it refetches in place instead.
+    onSuccess: (_res, github) =>
+      github ? qc.invalidateQueries() : qc.removeQueries({ predicate: (q) => q.queryKey[0] !== keys.auth[0] }),
   });
 }

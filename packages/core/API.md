@@ -3,6 +3,26 @@
 All bodies are JSON and validated with the Zod schemas in `src/contracts.ts`.
 Errors: `{ error, code }` (`ApiError`) with status 400 / 401 (`unauthorized`, no session) / 403 (`forbidden`, signed in but not allowed) / 404 / 409 / 503 (`not_configured`).
 
+### Per-task turn cap
+
+`TaskSpec.maxTurns?: number` (1-50) caps model turns for that task's code and
+review runs. The agent uses `min(spec.maxTurns, ALOE_MAX_TURNS)` (the env default
+is 30). Use it for tiny, precisely specified tasks so they fail fast.
+
+### Demo GitHub reset (`POST /api/demo/reset` with `{ "github": true }`)
+
+Runs after the database reset, only when `ALOE_PUBLISH_STAGING=1`, and only for
+the repo named by env `GITHUB_DEMO_REPO` (`owner/repo`). It closes open PRs from
+`aloe/staging`, force-sets `aloe/demo-base` and `aloe/staging` to
+`ALOE_DEMO_BASE_COMMIT`, and resets the server's git cache clone. It refuses any
+other repo, any ref not starting with `aloe/`, and never touches the default
+branch. A refusal or failure is reported in `github.ok = false`, never as an HTTP error.
+
+### Staging base branch
+
+Env `ALOE_STAGING_BASE` (e.g. `aloe/demo-base`) sets both the branch `aloe/staging`
+starts from and the PR's base. Unset = the repo's default branch.
+
 ## Agent API — `Authorization: Bearer <device token>`
 
 | Method | Path | Body | Response |
@@ -82,7 +102,7 @@ GitHub sign-in (Better Auth) will replace only the demo login below; the session
 | GET | `/api/me/weekly-email.txt` | | `text/plain`: the email's plain-text fallback |
 | POST | `/api/me/weekly-email/send` | | `WeeklyEmailSendResponse`; 503 `not_configured` if `RESEND_API_KEY` is unset; 409 `conflict` if the donor turned `weeklyEmail` off |
 | GET | `/api/decisions?status=open` | | `Decision[]` |
-| POST | `/api/demo/reset` | | `{ ok: true }` (reseeds the database; sessions survive). Needs a session **and** `ALOE_DEMO_LOGIN=1` (else 404) |
+| POST | `/api/demo/reset` | optional `ResetDemoRequest` (`{ github?: boolean }`) | `ResetDemoResponse`: `{ ok: true, github?: { ok, message, closedPrs, resetBranches, commit } }`. Reseeds the database (sessions survive) and clears the publish ledger. Needs a session **and** `ALOE_DEMO_LOGIN=1` (else 404). With `github: true` the caller must also maintain the demo project (`ccf`; else 403, nothing reset) and the demo fork is reset too (see below) |
 | GET | `/api/health` (public) | | `{ ok: true }` |
 
 There is no donor-reachable "resolve a decision" route: escalations are answered only through the

@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import type { CauseId, DonorSettings, Me } from "@aloe/core/contracts";
-import { useCauses, useMe, useResetDemo, useSaveSettings } from "../api/hooks";
+import { useAuth, useCauses, useMe, useResetDemo, useSaveSettings } from "../api/hooks";
 import { ScheduleOptions } from "../components/ScheduleOptions";
 import { Switch } from "../components/Switch";
 import { useToast } from "../components/Toast";
@@ -25,6 +25,8 @@ function SettingsForm({ me }: { me: Me }) {
   const { data: causes = [] } = useCauses();
   const saveSettings = useSaveSettings();
   const reset = useResetDemo();
+  const { data: auth } = useAuth();
+  const canResetGithub = auth?.maintainerOf.includes("ccf") ?? false;
   const s = me.settings;
 
   // Always build the next settings from the latest server copy, so a delayed
@@ -61,6 +63,10 @@ function SettingsForm({ me }: { me: Me }) {
       onSuccess: () => navigate("/"),
       onError: () => flash("Could not reset the demo."),
     });
+
+  // Also resets the demo fork on GitHub. Stays on this page so the result below is readable.
+  const resetAll = () => reset.mutate(true, { onError: () => flash("Could not reset the demo.") });
+  const gh = reset.variables === true ? reset.data?.github : undefined;
 
   return (
     <div className="page" style={{ maxWidth: 760 }}>
@@ -145,6 +151,25 @@ function SettingsForm({ me }: { me: Me }) {
           Reset
         </button>
       </div>
+      {/* The server enforces this too (403 unless you maintain the demo project). */}
+      {canResetGithub && (
+      <div className="reset-box">
+        <div>
+          <div style={{ fontWeight: 500, color: "#1F1E1B" }}>Reset demo + GitHub</div>
+          <div style={{ fontSize: 14, color: "#6B6A66" }}>
+            Also closes the open pull request and puts the demo fork's aloe/ branches back to the pinned commit.
+          </div>
+          {gh && (
+            <div role="status" style={{ marginTop: 8, fontSize: 14, color: gh.ok ? "#2F7D4F" : "#B3261E" }}>
+              {gh.message}
+            </div>
+          )}
+        </div>
+        <button type="button" className="btn-outline ghost" disabled={reset.isPending} onClick={resetAll}>
+          {reset.isPending && reset.variables === true ? "Resetting…" : "Reset + GitHub"}
+        </button>
+      </div>
+      )}
     </div>
   );
 }

@@ -32,6 +32,8 @@ import {
   PairResponse,
   ProjectDetail,
   ProjectSummary,
+  ResetDemoRequest,
+  ResetDemoResponse,
   ResolveDecisionRequest,
   StagingStatus,
   SubmitRequest,
@@ -51,6 +53,7 @@ import { buildDashboard } from "./dashboard.ts";
 import { errorBody, HttpError, leaseFailure, readBody, send } from "./http.ts";
 import { resetAndSeed } from "./seed.ts";
 import { CAUSES } from "./seed-data.ts";
+import { CCF_PROJECT_ID } from "./seed-ccf.ts";
 import { getMe, getProject, listDecisions, listProjects, toDecision } from "./views.ts";
 import { SERVER_ROOT } from "./database.ts";
 import { createSessionTools } from "./session.ts";
@@ -58,6 +61,7 @@ import { mountWeeklyEmail } from "./email/routes.ts";
 import type { EmailSender } from "./email/send.ts";
 import type { GitHubClient } from "./github.ts";
 import { createMaintainerRoutes, type MaintainerDeps } from "./maintainer.ts";
+import { demoResetterFromEnv, type DemoResetter } from "./publish/demo-reset.ts";
 import { publisherFromEnv, stagingStatus, type StagingPublisher } from "./publish/publisher.ts";
 
 const { devices, donors, projects, backings, decisions, tasks, events, submissions } = schema;
@@ -86,6 +90,8 @@ export interface AppOptions {
   steward?: MaintainerDeps["steward"];
   /** Publishes merged work to the fork's aloe/staging branch. Default: from env (ALOE_PUBLISH_STAGING=1 + GITHUB_TOKEN), else off. */
   publisher?: StagingPublisher | null;
+  /** Resets the demo fork on GitHub for POST /api/demo/reset {github:true}. Default: from env; tests inject. */
+  demoResetter?: DemoResetter;
 }
 
 // How long an idle agent waits before asking again. Short for demos (set in .env),
@@ -322,12 +328,17 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
     createMaintainerRoutes(db, { now, requireMaintainerOf: auth.requireMaintainerOf, afterResolve, github: opts.github, steward: opts.steward, resolveDecision }),
   );
 
-  app.post("/api/demo/reset", (c) => {
+  app.post("/api/demo/reset", async (c) => {
+    const body = await readBody(c, ResetDemoRequest);
     // Wiping the database is a demo convenience: only with demo login on, and only for someone signed in.
     requireDemoLogin();
     auth.requireUser(c);
+    // Force-pushing to the fork is stronger than reseeding: only the demo project's maintainer may ask, checked before anything is wiped.
+    if (body.github) auth.requireMaintainerOf(c, CCF_PROJECT_ID);
     resetAndSeed(db, now());
-    return c.json({ ok: true });
+    // GitHub part runs after the DB reset; a refusal is reported in the body, not as an HTTP error.
+    const github = body.github ? await (opts.demoResetter ?? demoResetterFromEnv(db)).reset() : undefined;
+    return send(c, ResetDemoResponse, { ok: true, ...(github ? { github } : {}) });
   });
 
   // ================= Maintainer API: hidden tests =================

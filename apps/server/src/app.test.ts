@@ -209,10 +209,10 @@ describe("web API", () => {
     expect((await call("/api/projects?cause=bogus")).status).toBe(400);
   });
 
-  it("seeds the Cloud Carbon Footprint project with 5 queued tasks, hidden tests per task, and a sandbox image", async () => {
+  it("seeds the Cloud Carbon Footprint project with 6 queued tasks, hidden tests per task, and a sandbox image", async () => {
     const detail = ProjectDetail.parse((await call("/api/projects/ccf")).body);
     expect(detail.repoUrl).toContain("kaeden-bryer/cloud-carbon-footprint");
-    expect(detail.queue.filter((t) => t.state === "queued")).toHaveLength(5);
+    expect(detail.queue.filter((t) => t.state === "queued")).toHaveLength(6);
     // Hidden tests are never in a web response.
     expect(JSON.stringify(detail)).not.toContain("hidden_");
 
@@ -223,6 +223,9 @@ describe("web API", () => {
     expect(task?.projectId).toBe("ccf");
     expect(task?.sandboxImage).toBe("aloe-sandbox-ccf");
     expect(task?.hiddenTests).toBeUndefined();
+    // The fast demo task is claimed first and carries its turn cap.
+    expect(task?.title).toMatch(/Q Business Pro/);
+    expect(task?.spec.maxTurns).toBe(8);
   });
 
   it("serves causes, project details, me and the dashboard in their contract shapes", async () => {
