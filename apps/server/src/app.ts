@@ -29,6 +29,7 @@ import {
   ProjectDetail,
   ProjectSummary,
   ResolveDecisionRequest,
+  StagingStatus,
   SubmitRequest,
   VerifyResultRequest,
   claimTask,
@@ -48,6 +49,7 @@ import { resetAndSeed } from "./seed.ts";
 import { CAUSES } from "./seed-data.ts";
 import { getMe, getProject, listDecisions, listProjects, toDecision } from "./views.ts";
 import { SERVER_ROOT } from "./database.ts";
+import { publisherFromEnv, stagingStatus, type StagingPublisher } from "./publish/publisher.ts";
 
 const { devices, donors, projects, backings, decisions, tasks, events, submissions } = schema;
 
@@ -61,6 +63,8 @@ export interface AppOptions {
   pairingCode?: string;
   /** Built web app to serve at `/`. Defaults to apps/web/dist; pass null to disable. */
   webDist?: string | null;
+  /** Publishes merged work to the fork's aloe/staging branch. Default: from env (ALOE_PUBLISH_STAGING=1 + GITHUB_TOKEN), else off. */
+  publisher?: StagingPublisher | null;
 }
 
 const DEFAULT_DONOR = "demo-donor";
@@ -73,6 +77,17 @@ const pausedRetryMs = () => Math.max(idleRetryMs(), 60_000);
 export function createApp(db: AloeDb, opts: AppOptions = {}) {
   const now = opts.now ?? Date.now;
   const app = new Hono<Env>();
+  const publisher = opts.publisher === undefined ? publisherFromEnv(db, now) : opts.publisher;
+  // On a real boot, retry anything a previous run left pending or failed.
+  if (opts.publisher === undefined && publisher) void publisher.retryPending();
+  /**
+   * Called only AFTER the merge transaction has committed. Fire and forget:
+   * a GitHub outage must never fail or slow the merge. Failures are recorded
+   * in the staging_publishes table by the publisher itself.
+   */
+  const publishMerged = (taskId: string) => {
+    publisher?.onMerged(taskId).catch((e) => console.error("[publish] could not queue", e));
+  };
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json(errorBody(err.code, err.message), err.status);
@@ -158,6 +173,7 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
     const device = c.get("device");
     const res = recordVerification(db, { ...body, taskId: c.req.param("id"), deviceId: device.id, donorId: device.donorId, now: now() });
     if (!res.ok) throw leaseFailure(res);
+    if (res.outcome === "auto_merge" || res.outcome === "spot_check") publishMerged(res.codeTaskId);
     return c.json({ outcome: res.outcome });
   });
 
@@ -191,6 +207,11 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
     const detail = getProject(db, c.req.param("id"), donorIdOf(c), now());
     if (!detail) throw new HttpError(404, "not_found", "Project not found");
     return send(c, ProjectDetail, detail);
+  });
+
+  app.get("/api/projects/:id/staging", (c) => {
+    requireProject(c.req.param("id"));
+    return send(c, StagingStatus, stagingStatus(db, c.req.param("id"), publisher !== null));
   });
 
   app.post("/api/projects/:id/back", (c) => {
@@ -234,6 +255,9 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
   app.post("/api/decisions/:id/resolve", async (c) => {
     const body = await readBody(c, ResolveDecisionRequest);
     const decision = resolveDecision(db, c.req.param("id"), body, donorIdOf(c), now());
+    // A maintainer approving an escalated task is the other way work reaches "merged".
+    const taskId = db.select({ t: decisions.taskId }).from(decisions).where(eq(decisions.id, c.req.param("id"))).get()?.t;
+    if (taskId && db.select({ s: tasks.state }).from(tasks).where(eq(tasks.id, taskId)).get()?.s === "merged") publishMerged(taskId);
     return send(c, Decision, decision);
   });
 

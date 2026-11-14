@@ -280,3 +280,29 @@ export const Dashboard = z.object({
   platform: z.array(z.object({ label: z.string(), value: z.string() })),
 });
 export type Dashboard = z.infer<typeof Dashboard>;
+
+// ---------- Staging publish status (Phase 4: aloe/staging branch + one PR) ----------
+
+export const PublishStatus = z.enum(["pending", "published", "failed"]);
+export type PublishStatus = z.infer<typeof PublishStatus>;
+
+/** GET /api/projects/:id/staging. Where each merged task is on its way to the fork. */
+export const StagingStatus = z.object({
+  /** False unless the server runs with ALOE_PUBLISH_STAGING=1 and a GITHUB_TOKEN. */
+  enabled: z.boolean(),
+  branch: z.string(),
+  /** The one open PR for this project, if it has been created. */
+  prUrl: z.string().nullable(),
+  items: z.array(
+    z.object({
+      taskId: z.string(),
+      title: z.string(),
+      status: PublishStatus,
+      error: z.string().nullable(),
+      commitSha: z.string().nullable(),
+      attempts: z.number().int(),
+      updatedAt: z.number().int(),
+    }),
+  ),
+});
+export type StagingStatus = z.infer<typeof StagingStatus>;
