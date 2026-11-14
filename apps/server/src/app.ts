@@ -22,6 +22,7 @@ import {
   DonorSettings,
   HeartbeatRequest,
   HeartbeatResponse,
+  HiddenTests,
   IllegalTransitionError,
   Me,
   PairRequest,
@@ -51,6 +52,8 @@ import { SERVER_ROOT } from "./database.ts";
 
 const { devices, donors, projects, backings, decisions, tasks, events, submissions } = schema;
 
+const hiddenTestsTable = schema.hiddenTests;
+
 type Device = typeof devices.$inferSelect;
 type Env = { Variables: { device: Device } };
 
@@ -59,6 +62,8 @@ export interface AppOptions {
   now?: () => number;
   /** Shared secret agents use to pair. Defaults to env ALOE_DEMO_PAIRING_CODE, then "aloe-demo". */
   pairingCode?: string;
+  /** Shared secret for maintainer routes (hidden tests). Defaults to env ALOE_MAINTAINER_KEY, then "aloe-maintainer-demo". */
+  maintainerKey?: string;
   /** Built web app to serve at `/`. Defaults to apps/web/dist; pass null to disable. */
   webDist?: string | null;
 }
@@ -239,6 +244,63 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
 
   app.post("/api/demo/reset", (c) => {
     resetAndSeed(db, now());
+    return c.json({ ok: true });
+  });
+
+  // ================= Maintainer API: hidden tests =================
+  // Auth: a shared maintainer key in `x-aloe-maintainer-key` (env ALOE_MAINTAINER_KEY,
+  // default "aloe-maintainer-demo"), compared in constant time. Same idea as the
+  // pairing code: the demo has no maintainer accounts yet. These routes are NOT
+  // under the donor-identity header, because donors must never read hidden tests.
+  // The web app never calls them; hidden tests appear in no web/public response.
+
+  const requireMaintainer = (c: Context) => {
+    const given = c.req.header("x-aloe-maintainer-key") ?? "";
+    const expected = opts.maintainerKey ?? process.env.ALOE_MAINTAINER_KEY ?? "aloe-maintainer-demo";
+    if (!given || !secretsMatch(given, expected)) throw new HttpError(401, "unauthorized", "Maintainer key required");
+  };
+  /** "" = project-wide; otherwise a code task of this project that gets its own override. */
+  const hiddenScope = (c: Context, projectId: string) => {
+    requireMaintainer(c);
+    requireProject(projectId);
+    const taskId = c.req.query("taskId") ?? "";
+    if (taskId) {
+      const t = db.select({ projectId: tasks.projectId }).from(tasks).where(eq(tasks.id, taskId)).get();
+      if (!t || t.projectId !== projectId) throw new HttpError(404, "not_found", "Task not found in this project");
+    }
+    return taskId;
+  };
+
+  app.put("/api/projects/:id/hidden-tests", async (c) => {
+    const projectId = c.req.param("id");
+    const taskId = hiddenScope(c, projectId);
+    const body = await readBody(c, HiddenTests);
+    db.insert(hiddenTestsTable)
+      .values({ projectId, taskId, command: body.command, files: body.files, updatedAt: now() })
+      .onConflictDoUpdate({
+        target: [hiddenTestsTable.projectId, hiddenTestsTable.taskId],
+        set: { command: body.command, files: body.files, updatedAt: now() },
+      })
+      .run();
+    return send(c, HiddenTests, body);
+  });
+
+  app.get("/api/projects/:id/hidden-tests", (c) => {
+    const projectId = c.req.param("id");
+    const taskId = hiddenScope(c, projectId);
+    const row = db
+      .select()
+      .from(hiddenTestsTable)
+      .where(and(eq(hiddenTestsTable.projectId, projectId), eq(hiddenTestsTable.taskId, taskId)))
+      .get();
+    if (!row) throw new HttpError(404, "not_found", "No hidden tests set");
+    return send(c, HiddenTests, { command: row.command, files: row.files });
+  });
+
+  app.delete("/api/projects/:id/hidden-tests", (c) => {
+    const projectId = c.req.param("id");
+    const taskId = hiddenScope(c, projectId);
+    db.delete(hiddenTestsTable).where(and(eq(hiddenTestsTable.projectId, projectId), eq(hiddenTestsTable.taskId, taskId))).run();
     return c.json({ ok: true });
   });
 

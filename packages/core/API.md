@@ -14,6 +14,31 @@ Errors: `{ error, code }` (`ApiError`) with status 400 / 401 / 404 / 409.
 | POST | `/api/agent/tasks/:id/submit` | `SubmitRequest` | `{ submissionId, verifyTaskId }` or 409 |
 | POST | `/api/agent/tasks/:id/verify` | `VerifyResultRequest` | `{ outcome }` or 409 |
 
+### Hidden tests
+
+`ClaimedTask.hiddenTests?: HiddenTests` is present **only on verify leases**
+(never on code leases, never in any web response). `HiddenTests` =
+`{ command: string (<=300), files: [{ path, content (<=200k) }] (<=20) }`.
+`path` must be repo-relative: no leading `/` or `\`, no drive letter, no `..`
+segment, nothing under `.git/`. The verifier writes the files into the patched
+worktree, runs `command` in the sandbox, and reports `hiddenTestsPassed`
+(`true` with note "no hidden tests" when none were sent). A `false` never
+merges: routing sends it to `retry`, or to a maintainer after 3 attempts.
+
+## Maintainer API — `x-aloe-maintainer-key: <key>` header
+
+Key = env `ALOE_MAINTAINER_KEY` (default `aloe-maintainer-demo`), constant-time
+compared; real maintainer accounts replace it later. Not donor-header auth.
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| PUT | `/api/projects/:id/hidden-tests[?taskId=<code task>]` | `HiddenTests` | `HiddenTests` |
+| GET | same | | `HiddenTests` or 404 |
+| DELETE | same | | `{ ok: true }` |
+
+Without `taskId` it sets the project-wide suite; with it, an override for that
+one code task (the override wins on the verify lease).
+
 ## Web API — demo identity via `x-aloe-donor: <donorId>` header (default `demo-donor`)
 
 Real auth (GitHub sign-in) replaces the header later; routes stay the same.

@@ -32,6 +32,7 @@ export function resetAndSeed(db: AloeDb, now: number): void {
 
     // Children first, so foreign keys never point at a deleted row.
     for (const table of [
+      schema.hiddenTests,
       schema.events,
       schema.decisions,
       schema.verifications,
@@ -87,6 +88,22 @@ function seedInto(tx: Tx, now: number): void {
       })
       .run();
   }
+
+  // ---- hidden tests: one tiny demo suite so the fake verify flow exercises the path ----
+  tx.insert(schema.hiddenTests)
+    .values({
+      projectId: "eae",
+      taskId: "",
+      command: "node aloe-hidden/check.mjs",
+      files: [
+        {
+          path: "aloe-hidden/check.mjs",
+          content: "// Hidden: the patch author never sees this file.\nimport assert from 'node:assert';\nassert.strictEqual(1 + 1, 2);\nconsole.log('hidden ok');\n",
+        },
+      ],
+      updatedAt: now,
+    })
+    .run();
 
   // ---- donors, their backings and one device each ----
   for (const d of DONORS) {

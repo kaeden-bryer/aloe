@@ -283,6 +283,23 @@ describe("verification", () => {
   });
 });
 
+describe("hidden tests and routing", () => {
+  it("a failed hidden test never merges the submission, even when visible tests and review pass", () => {
+    const env = setup();
+    const taskId = env.addTask("tests"); // low-risk: would auto-merge if everything passed
+    const { verifyTaskId } = aliceSubmits(env, T0);
+    const review = env.claim("b1", T0 + 10, ["verify"])!;
+    expect(review.id).toBe(verifyTaskId);
+
+    const res = recordVerification(env.db, {
+      taskId: review.id, deviceId: "b1", donorId: "bob", now: T0 + 20, leaseToken: review.leaseToken,
+      ...pass, hiddenTestsPassed: false,
+    });
+    expect(res).toMatchObject({ ok: true, outcome: "retry" });
+    expect(env.getTask(taskId).state).toBe("queued");
+  });
+});
+
 describe("state machine", () => {
   it("throws on an illegal transition", () => {
     expect(() => assertTransition("merged", "leased")).toThrow(IllegalTransitionError);

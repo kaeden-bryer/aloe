@@ -238,6 +238,74 @@ describe("web API", () => {
   });
 });
 
+// ---------- hidden tests ----------
+
+describe("hidden tests", () => {
+  const KEY = { "x-aloe-maintainer-key": "aloe-maintainer-demo" };
+  const suite = { command: "node hidden/check.mjs", files: [{ path: "hidden/check.mjs", content: "process.exit(0)" }] };
+  const put = (projectId: string, body: unknown, query = "", headers: Record<string, string> = KEY) =>
+    app.request(`/api/projects/${projectId}/hidden-tests${query}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    });
+
+  it("a code lease never receives hidden tests, a verify lease does", async () => {
+    const aino = await pair("demo-donor");
+    const mikko = await pair("demo-donor-2");
+
+    const task = (await claim(aino, ["code"]))!;
+    expect((await put(task.projectId, suite)).status).toBe(200);
+    expect(task.hiddenTests).toBeUndefined();
+
+    const second = (await claim(aino, ["code"]))!; // a code lease claimed after the tests exist
+    expect(second.hiddenTests).toBeUndefined();
+    expect(JSON.stringify(second)).not.toContain("hidden/check.mjs");
+
+    await call(`/api/agent/tasks/${task.id}/submit`, { leaseToken: task.leaseToken, ...work }, { token: aino });
+    const review = (await claim(mikko, ["verify"]))!;
+    expect(review.kind).toBe("verify");
+    expect(review.hiddenTests).toEqual(suite);
+  });
+
+  it("a task-level override beats the project-level suite", async () => {
+    const aino = await pair("demo-donor");
+    const mikko = await pair("demo-donor-2");
+    const task = (await claim(aino, ["code"]))!;
+    const override = { command: "node only-this.mjs", files: [] };
+    await put(task.projectId, suite);
+    expect((await put(task.projectId, override, `?taskId=${task.id}`)).status).toBe(200);
+    await call(`/api/agent/tasks/${task.id}/submit`, { leaseToken: task.leaseToken, ...work }, { token: aino });
+    expect((await claim(mikko, ["verify"]))!.hiddenTests).toEqual(override);
+  });
+
+  it("is maintainer-only and validates file paths", async () => {
+    expect((await put("eae", suite, "", {})).status).toBe(401);
+    expect((await put("eae", suite, "", { "x-aloe-maintainer-key": "wrong" })).status).toBe(401);
+    for (const path of ["../x", "/etc/passwd", ".git/hooks/pre-commit", "a/../../b", "C:\\x"]) {
+      expect((await put("eae", { command: "true", files: [{ path, content: "" }] })).status, path).toBe(400);
+    }
+    expect((await put("nope", suite)).status).toBe(404);
+    expect((await put("eae", suite, "?taskId=ghost")).status).toBe(404);
+  });
+
+  it("reads back with the key and never shows up in web responses", async () => {
+    await put("eae", suite);
+    expect((await app.request("/api/projects/eae/hidden-tests")).status).toBe(401);
+    const got = await app.request("/api/projects/eae/hidden-tests", { headers: KEY });
+    expect(await got.json()).toEqual(suite);
+
+    for (const path of ["/api/projects/eae", "/api/projects", "/api/me/dashboard", "/api/decisions"]) {
+      expect(JSON.stringify((await call(path)).body), path).not.toContain("check.mjs");
+    }
+  });
+
+  it("the seed gives the demo project a hidden test", async () => {
+    const got = await app.request("/api/projects/eae/hidden-tests", { headers: KEY });
+    expect(got.status).toBe(200);
+  });
+});
+
 describe("demo reset", () => {
   it("keeps paired agents logged in across a reset", async () => {
     const aino = await pair("demo-donor");
