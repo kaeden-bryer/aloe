@@ -379,6 +379,20 @@ input[type="range"] { accent-color: var(--green); }
 .decision-btn:hover:not(:disabled) { background: #fbeedd; }
 .decision-btn.is-first { background: #9a5b13; color: #ffffff; border-color: #9a5b13; }
 .decision-btn.is-first:hover:not(:disabled) { background: #7f4a0f; }
+.decision-link { display: inline-block; margin-top: 8px; text-decoration: none; }
+.decision-wait { margin-top: 8px; font-size: 13px; color: var(--muted); }
+
+/* ---------- Sign-in (demo persona picker) ---------- */
+.persona { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 0; font-size: 12px; color: var(--subtle); }
+.persona select { font: inherit; font-size: 13px; color: var(--ink); background: #ffffff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.persona .signout { align-self: flex-start; font-size: 12px; color: var(--subtle); text-decoration: underline; padding: 0; }
+.signin { max-width: 520px; margin: 0 auto; padding: 72px 24px; }
+.signin h1 { margin: 0 0 8px; }
+.signin-list { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.signin-person { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; padding: 12px 14px; background: #ffffff; border: 1px solid var(--line); border-radius: 10px; }
+.signin-person:hover:not(:disabled) { border-color: #9a5b13; }
+.signin-person .n { font-weight: 600; color: var(--ink); }
+.signin-person .r { font-size: 13px; color: var(--subtle); }
 .across { margin-top: 16px; border-radius: 18px; background: var(--forest); color: #e6efe9; padding: 24px 28px; }
 .across .panel-h2 { color: #ffffff; }
 .across .sub { font-size: 13px; color: rgba(230, 239, 233, 0.6); }

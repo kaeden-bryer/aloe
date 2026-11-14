@@ -16,13 +16,13 @@ beforeEach(() => {
   resetAndSeed(db, T0);
 });
 
-const input = (now: number) => ({ donorName: "Aino Virtanen", report: buildDashboard(db, "demo-donor", now), dashboardUrl: "http://x.test/dashboard" });
+const input = (now: number) => ({ donorName: "Kaeden Bryer", report: buildDashboard(db, "demo-donor", now), dashboardUrl: "http://x.test/dashboard" });
 
 describe("renderWeeklyEmail", () => {
   it("renders seeded data with the key numbers", async () => {
     const i = input(T0);
     const out = await renderWeeklyEmail(i);
-    expect(out.html).toContain("Aino");
+    expect(out.html).toContain("Kaeden");
     expect(out.html).toContain(i.report.weekLabel);
     for (const p of i.report.platform) expect(out.html).toContain(p.label);
     for (const p of i.report.landed.filter((l) => l.merged > 0)) expect(out.html).toContain(p.name);
@@ -40,9 +40,9 @@ describe("renderWeeklyEmail", () => {
 });
 
 describe("weekly email routes", () => {
-  const app = (emailSender?: EmailSender | null) => createApp(db, { now: () => T0, webDist: null, emailSender });
+  const app = (emailSender?: EmailSender | null) => createApp(db, { now: () => T0, webDist: null, emailSender, actAs: (c) => c.req.header("x-test-user") ?? "demo-donor" });
   const post = (a: ReturnType<typeof app>, donor = "demo-donor") =>
-    a.request("/api/me/weekly-email/send", { method: "POST", headers: { "x-aloe-donor": donor } });
+    a.request("/api/me/weekly-email/send", { method: "POST", headers: { "x-test-user": donor } });
 
   it("serves the HTML preview and the text version", async () => {
     const a = app(null);
@@ -66,7 +66,7 @@ describe("weekly email routes", () => {
     expect(res.status).toBe(200);
     const body = WeeklyEmailSendResponse.parse(await res.json());
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.to).toBe("aino@example.org");
+    expect(sent[0]!.to).toBe("kaeden@example.org");
     expect(sent[0]!.subject).toBe(body.subject);
     expect(sent[0]!.html).toContain("<html");
     expect(sent[0]!.text).toContain("Aloe weekly report");

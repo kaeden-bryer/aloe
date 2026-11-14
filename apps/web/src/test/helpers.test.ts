@@ -80,6 +80,6 @@ describe("text helpers", () => {
 
   it("shortens URLs and names", () => {
     expect(urlLabel("https://world.openfoodfacts.org/")).toBe("world.openfoodfacts.org");
-    expect(initials("Aino Virtanen")).toBe("AV");
+    expect(initials("Kaeden Bryer")).toBe("KB");
   });
 });

@@ -13,6 +13,7 @@ import { ProjectPage } from "./screens/ProjectPage";
 import { Settings } from "./screens/Settings";
 import { WeeklyEmailPreview } from "./screens/WeeklyEmailPreview";
 import { MaintainerPage } from "./screens/maintainer/MaintainerPage";
+import { RequireSignIn } from "./screens/SignIn";
 
 export function App() {
   return (
@@ -20,7 +21,7 @@ export function App() {
       <ScrollToTop />
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/start" element={<Onboarding />} />
+        <Route path="/start" element={<RequireSignIn><Onboarding /></RequireSignIn>} />
         <Route element={<AppShell />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/market" element={<Market />} />

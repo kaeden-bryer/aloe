@@ -154,4 +154,17 @@ CREATE TABLE IF NOT EXISTS task_drafts (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS task_drafts_project_idx ON task_drafts (project_id, status);
+
+CREATE TABLE IF NOT EXISTS project_maintainers (
+  user_id TEXT NOT NULL REFERENCES donors(id),
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  PRIMARY KEY (user_id, project_id)
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT NOT NULL REFERENCES donors(id),
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
 `;

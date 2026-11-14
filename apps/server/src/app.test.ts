@@ -29,14 +29,15 @@ beforeEach(() => {
   db = opened.db;
   clock = T0;
   resetAndSeed(db, T0);
-  app = createApp(db, { now: () => clock, pairingCode: "test-code", webDist: null });
+  // actAs is the test-only identity hook: no cookie needed, defaults to the Kaeden donor.
+  app = createApp(db, { now: () => clock, pairingCode: "test-code", webDist: null, demoLogin: true, actAs: (c) => c.req.header("x-test-user") ?? "demo-donor" });
 });
 
 type Init = { token?: string; donor?: string; method?: string };
 async function call(path: string, body?: unknown, init: Init = {}) {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (init.token) headers.authorization = `Bearer ${init.token}`;
-  if (init.donor) headers["x-aloe-donor"] = init.donor;
+  if (init.donor) headers["x-test-user"] = init.donor;
   const res = await app.request(path, {
     method: init.method ?? (body === undefined ? "GET" : "POST"),
     headers,
@@ -80,7 +81,7 @@ describe("agent flow", () => {
     const sub = await call(`/api/agent/tasks/${task.id}/submit`, { leaseToken: task.leaseToken, ...work }, { token: aino });
     expect(sub.status).toBe(200);
 
-    // Aino may not review her own work; Mikko gets it first because verify tasks outrank code.
+    // Kaeden may not review her own work; Mikko gets it first because verify tasks outrank code.
     expect((await claim(aino, ["verify"]))).toBeNull();
     const review = (await claim(mikko))!;
     expect(review.id).toBe(sub.body.verifyTaskId);
@@ -95,7 +96,7 @@ describe("agent flow", () => {
     expect(dash.mergedPerDay.at(-1)!.byProject[task.projectId]).toBeGreaterThanOrEqual(1);
 
     const project = ProjectDetail.parse((await call(`/api/projects/${task.projectId}`)).body);
-    expect(project.queue.find((q) => q.id === task.id)).toMatchObject({ state: "merged", who: "Aino's agent" });
+    expect(project.queue.find((q) => q.id === task.id)).toMatchObject({ state: "merged", who: "Kaeden's agent" });
   });
 
   it("an interface task escalates, and a maintainer's approval merges it", async () => {
@@ -114,9 +115,17 @@ describe("agent flow", () => {
     const decision = open.find((d) => d.taskId === risky.id)!;
     expect(decision.question).toContain(risky.title);
 
-    const resolved = await call(`/api/decisions/${decision.id}/resolve`, { optionId: "approve" });
+    // Only the project's maintainer may decide: not a donor, not another project's maintainer.
+    const url = `/api/maintain/projects/${risky.projectId}/decisions/${decision.id}/resolve`;
+    const other = risky.projectId === "ccf" ? "maintainer-eae" : "maintainer-ccf";
+    expect((await call(url, { optionId: "approve" })).status).toBe(403); // default test user = donor Kaeden
+    expect((await call(url, { optionId: "approve" }, { donor: other })).status).toBe(403);
+    expect((await call(`/api/decisions/${decision.id}/resolve`, { optionId: "approve" }, { donor: `maintainer-${risky.projectId}` })).status).toBe(404); // the old donor route is gone
+
+    const asMaintainer = { donor: `maintainer-${risky.projectId}` };
+    const resolved = await call(url, { optionId: "approve" }, asMaintainer);
     expect(Decision.parse(resolved.body)).toMatchObject({ status: "resolved", resolution: "Approve and merge" });
-    const again = await call(`/api/decisions/${decision.id}/resolve`, { optionId: "approve" });
+    const again = await call(url, { optionId: "approve" }, asMaintainer);
     expect(again.status).toBe(409);
 
     const project = ProjectDetail.parse((await call(`/api/projects/${risky.projectId}`)).body);
@@ -158,7 +167,7 @@ describe("agent auth and errors", () => {
     expect(wrongToken.status).toBe(409);
     expect(ApiError.parse(wrongToken.body).code).toBe("lease_lost");
 
-    // Aino's laptop sleeps past the lease; Mikko (who also backs this project) picks it up.
+    // Kaeden's laptop sleeps past the lease; Mikko (who also backs this project) picks it up.
     await call(`/api/projects/${task.projectId}/back`, {}, { donor: "demo-donor-2" });
     clock += DEFAULT_LEASE_MS + 1;
     const taken = (await claim(mikko, ["code"]))!;
@@ -223,7 +232,7 @@ describe("web API", () => {
     expect((await call("/api/projects/nope")).status).toBe(404);
 
     const me = Me.parse((await call("/api/me")).body);
-    expect(me).toMatchObject({ name: "Aino Virtanen", email: "aino@example.org" });
+    expect(me).toMatchObject({ name: "Kaeden Bryer", email: "kaeden@example.org" });
 
     const dash = Dashboard.parse((await call("/api/me/dashboard")).body);
     expect(dash.weekLabel).toBe("Mon 9 to Sun 15 November");
@@ -257,9 +266,11 @@ describe("web API", () => {
 // ---------- hidden tests ----------
 
 describe("hidden tests", () => {
-  const KEY = { "x-aloe-maintainer": "aloe-maintainer-demo" };
+  // Maintainers are per project: each project's seeded maintainer is "maintainer-<projectId>".
+  const KEY = { "x-test-user": "maintainer-eae" };
+  const asMaintainer = (projectId: string) => ({ "x-test-user": `maintainer-${projectId}` });
   const suite = { command: "node hidden/check.mjs", files: [{ path: "hidden/check.mjs", content: "process.exit(0)" }] };
-  const put = (projectId: string, body: unknown, query = "", headers: Record<string, string> = KEY) =>
+  const put = (projectId: string, body: unknown, query = "", headers: Record<string, string> = asMaintainer(projectId)) =>
     app.request(`/api/projects/${projectId}/hidden-tests${query}`, {
       method: "PUT",
       headers: { "content-type": "application/json", ...headers },
@@ -296,18 +307,20 @@ describe("hidden tests", () => {
   });
 
   it("is maintainer-only and validates file paths", async () => {
-    expect((await put("eae", suite, "", {})).status).toBe(401);
-    expect((await put("eae", suite, "", { "x-aloe-maintainer": "wrong" })).status).toBe(401);
+    expect((await put("eae", suite, "", { "x-test-user": "" })).status).toBe(401); // signed out
+    expect((await put("eae", suite, "", { "x-test-user": "demo-donor" })).status).toBe(403); // a donor
+    expect((await put("eae", suite, "", asMaintainer("ccf"))).status).toBe(403); // another project's maintainer
     for (const path of ["../x", "/etc/passwd", ".git/hooks/pre-commit", "a/../../b", "C:\\x"]) {
       expect((await put("eae", { command: "true", files: [{ path, content: "" }] })).status, path).toBe(400);
     }
-    expect((await put("nope", suite)).status).toBe(404);
+    expect((await put("nope", suite, "", KEY)).status).toBe(403); // not a project anyone maintains
     expect((await put("eae", suite, "?taskId=ghost")).status).toBe(404);
   });
 
   it("reads back with the key and never shows up in web responses", async () => {
     await put("eae", suite);
-    expect((await app.request("/api/projects/eae/hidden-tests")).status).toBe(401);
+    expect((await app.request("/api/projects/eae/hidden-tests", { headers: { "x-test-user": "" } })).status).toBe(401);
+    expect((await app.request("/api/projects/eae/hidden-tests")).status).toBe(403); // default test user is a donor
     const got = await app.request("/api/projects/eae/hidden-tests", { headers: KEY });
     expect(await got.json()).toEqual(suite);
 

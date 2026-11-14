@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 import { count, eq } from "drizzle-orm";
 import { ESCALATION_OPTIONS, newId, schema, type AloeDb, type TaskSpec, type TaskState } from "@aloe/core";
 import { CCF_BRIEF, CCF_DESIGN, CCF_REPO_URL, CCF_SANDBOX_IMAGE, CCF_TASKS } from "./seed-ccf.ts";
-import { DONORS, PROJECT_EXTRAS, PROJECTS, CAUSES, type SeedTaskSpec } from "./seed-data.ts";
+import { DONORS, MAINTAINERS, PROJECT_EXTRAS, PROJECTS, CAUSES, type SeedTaskSpec } from "./seed-data.ts";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -30,9 +30,13 @@ export function resetAndSeed(db: AloeDb, now: number): void {
       .from(schema.devices)
       .all()
       .filter((d) => !d.id.startsWith("dev_seed_"));
+    // Same idea for browser sessions: a reset triggered from the UI shouldn't sign you out.
+    const keptSessions = tx.select().from(schema.sessions).all();
 
     // Children first, so foreign keys never point at a deleted row.
     for (const table of [
+      schema.sessions,
+      schema.projectMaintainers,
       schema.hiddenTests,
       schema.events,
       schema.taskDrafts,
@@ -52,6 +56,9 @@ export function resetAndSeed(db: AloeDb, now: number): void {
     const donorIds = new Set(tx.select({ id: schema.donors.id }).from(schema.donors).all().map((d) => d.id));
     for (const d of paired) {
       if (donorIds.has(d.donorId)) tx.insert(schema.devices).values(d).run();
+    }
+    for (const s of keptSessions) {
+      if (donorIds.has(s.userId)) tx.insert(schema.sessions).values(s).run();
     }
   });
 }
@@ -383,6 +390,12 @@ function seedInto(tx: Tx, now: number): void {
 
   for (const [donorId, n] of verified) {
     tx.update(schema.donors).set({ verifiedCount: n }).where(eq(schema.donors.id, donorId)).run();
+  }
+
+  // ---- maintainers: users with a membership row for exactly one project each ----
+  for (const m of MAINTAINERS) {
+    tx.insert(schema.donors).values({ id: m.id, name: m.name, email: m.email, causes: [], createdAt: now - 28 * DAY }).run();
+    tx.insert(schema.projectMaintainers).values({ userId: m.id, projectId: m.projectId }).run();
   }
 }
 

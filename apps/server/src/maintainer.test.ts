@@ -7,7 +7,7 @@ import { parseRepoUrl } from "./github.ts";
 import { resetAndSeed } from "./seed.ts";
 
 const T0 = Date.UTC(2026, 10, 14, 12, 0, 0);
-const MAINTAINER = "test-maintainer";
+const EAE_MAINTAINER = { "x-test-user": "maintainer-eae" }; // test-only identity hook (see AppOptions.actAs)
 let db: AloeDb;
 let app: ReturnType<typeof createApp>;
 let calls: { parentOf: string[]; list: { repo: string; label?: string; max: number }[] };
@@ -31,7 +31,7 @@ function fakeGithub(opts: { fork?: boolean } = {}): GitHubClient {
 }
 
 function build(github: GitHubClient) {
-  app = createApp(db, { now: () => T0, pairingCode: "pc", webDist: null, maintainerToken: MAINTAINER, github });
+  app = createApp(db, { now: () => T0, pairingCode: "pc", webDist: null, github, actAs: (c) => c.req.header("x-test-user") });
 }
 
 beforeEach(() => {
@@ -45,7 +45,7 @@ beforeEach(() => {
   build(fakeGithub());
 });
 
-async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = { "x-aloe-maintainer": MAINTAINER }) {
+async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = EAE_MAINTAINER) {
   const res = await app.request(path, {
     method,
     headers: { "content-type": "application/json", ...headers },
@@ -70,9 +70,10 @@ async function claimAs(donorId: string) {
 const emptyTheQueue = () => db.update(schema.tasks).set({ state: "closed" }).run();
 
 describe("maintainer auth", () => {
-  it("rejects missing or wrong tokens", async () => {
-    expect((await call("GET", m("/brief"), undefined, {})).status).toBe(401);
-    expect((await call("GET", m("/brief"), undefined, { "x-aloe-maintainer": "nope" })).status).toBe(401);
+  it("needs a session, and a maintainer of THIS project", async () => {
+    expect((await call("GET", m("/brief"), undefined, { "x-test-user": "" })).status).toBe(401);
+    expect((await call("GET", m("/brief"), undefined, { "x-test-user": "demo-donor" })).status).toBe(403);
+    expect((await call("GET", m("/brief"), undefined, { "x-test-user": "maintainer-ccf" })).status).toBe(403);
     expect((await call("GET", m("/brief"))).status).toBe(200);
   });
 });
@@ -125,7 +126,7 @@ describe("import and approval", () => {
   });
 
   it("rejects a repo URL that is not on GitHub", async () => {
-    const res = await call("POST", "/api/maintain/projects/biomass/import", {});
+    const res = await call("POST", "/api/maintain/projects/biomass/import", {}, { "x-test-user": "maintainer-biomass" });
     expect(res.status).toBe(400);
   });
 
@@ -173,7 +174,7 @@ describe("import and approval", () => {
 
   it("can't touch another project's draft", async () => {
     const { drafts } = (await call("POST", m("/import"), {})).body;
-    expect((await call("POST", `/api/maintain/projects/farmos/drafts/${drafts[0].id}/approve`)).status).toBe(404);
+    expect((await call("POST", `/api/maintain/projects/farmos/drafts/${drafts[0].id}/approve`, undefined, { "x-test-user": "maintainer-farmos" })).status).toBe(404);
   });
 });
 
@@ -182,13 +183,13 @@ describe("decision inbox", () => {
     const eae = (await call("GET", m("/decisions"))).body;
     expect(eae.length).toBeGreaterThan(0);
     for (const d of eae) expect(d).toMatchObject({ projectId: "eae", status: "open" });
-    const farm = (await call("GET", "/api/maintain/projects/farmos/decisions")).body;
+    const farm = (await call("GET", "/api/maintain/projects/farmos/decisions", undefined, { "x-test-user": "maintainer-farmos" })).body;
     for (const d of farm) expect(d.projectId).toBe("farmos");
     expect(farm.map((d: any) => d.id)).not.toContain(eae[0].id);
 
     // Resolving from another project's URL is refused; from its own it works and leaves the inbox.
     const opt = eae[0].options[0].id;
-    expect((await call("POST", `/api/maintain/projects/farmos/decisions/${eae[0].id}/resolve`, { optionId: opt })).status).toBe(404);
+    expect((await call("POST", `/api/maintain/projects/farmos/decisions/${eae[0].id}/resolve`, { optionId: opt }, { "x-test-user": "maintainer-farmos" })).status).toBe(404);
     const done = await call("POST", m(`/decisions/${eae[0].id}/resolve`), { optionId: opt });
     expect(done.status).toBe(200);
     expect(done.body.status).toBe("resolved");
