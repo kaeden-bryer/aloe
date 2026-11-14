@@ -7,6 +7,8 @@
  * user can read with `ps`). Env of a child process is only readable by its owner.
  */
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { join } from "node:path";
 
 export interface GitRunOptions {
   cwd?: string;
@@ -45,4 +47,9 @@ export function scrub(text: string, token: string | undefined): string {
   if (!token) return text;
   const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
   return text.split(token).join("***").split(basic).join("***");
+}
+
+/** Where the publisher keeps its clone of a repo. Shared so the demo reset can wipe exactly that directory. */
+export function cloneDirFor(cacheDir: string, cloneUrl: string, repo: string): string {
+  return join(cacheDir, `${createHash("sha1").update(cloneUrl).digest("hex").slice(0, 10)}-${repo}`);
 }

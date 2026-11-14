@@ -3,6 +3,26 @@
 All bodies are JSON and validated with the Zod schemas in `src/contracts.ts`.
 Errors: `{ error, code }` (`ApiError`) with status 400 / 401 / 404 / 409 / 503 (`not_configured`).
 
+### Per-task turn cap
+
+`TaskSpec.maxTurns?: number` (1-50) caps model turns for that task's code and
+review runs. The agent uses `min(spec.maxTurns, ALOE_MAX_TURNS)` (the env default
+is 30). Use it for tiny, precisely specified tasks so they fail fast.
+
+### Demo GitHub reset (`POST /api/demo/reset` with `{ "github": true }`)
+
+Runs after the database reset, only when `ALOE_PUBLISH_STAGING=1`, and only for
+the repo named by env `GITHUB_DEMO_REPO` (`owner/repo`). It closes open PRs from
+`aloe/staging`, force-sets `aloe/demo-base` and `aloe/staging` to
+`ALOE_DEMO_BASE_COMMIT`, and resets the server's git cache clone. It refuses any
+other repo, any ref not starting with `aloe/`, and never touches the default
+branch. A refusal or failure is reported in `github.ok = false`, never as an HTTP error.
+
+### Staging base branch
+
+Env `ALOE_STAGING_BASE` (e.g. `aloe/demo-base`) sets both the branch `aloe/staging`
+starts from and the PR's base. Unset = the repo's default branch.
+
 ## Agent API — `Authorization: Bearer <device token>`
 
 | Method | Path | Body | Response |
@@ -69,7 +89,7 @@ Real auth (GitHub sign-in) replaces the header later; routes stay the same.
 | POST | `/api/me/weekly-email/send` | | `WeeklyEmailSendResponse`; 503 `not_configured` if `RESEND_API_KEY` is unset; 409 `conflict` if the donor turned `weeklyEmail` off |
 | GET | `/api/decisions?status=open` | | `Decision[]` |
 | POST | `/api/decisions/:id/resolve` | `ResolveDecisionRequest` | `Decision` |
-| POST | `/api/demo/reset` | | `{ ok: true }` (reseeds the database) |
+| POST | `/api/demo/reset` | optional `ResetDemoRequest` (`{ github?: boolean }`) | `ResetDemoResponse`: `{ ok: true, github?: { ok, message, closedPrs, resetBranches, commit } }`. Reseeds the database and clears the publish ledger; with `github: true` it also resets the demo fork (see below) |
 | GET | `/api/health` | | `{ ok: true }` |
 
 ## Maintainer API — demo identity via `x-aloe-maintainer: <token>` header

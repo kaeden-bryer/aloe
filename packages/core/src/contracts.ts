@@ -55,6 +55,12 @@ export const TaskSpec = z.object({
   /** Shell command the verifier runs inside the sandbox, e.g. "npm test". */
   testCommand: z.string().max(300),
   sourceIssue: z.number().int().positive().optional(),
+  /**
+   * Optional cap on model turns for this task's code and review runs. The agent
+   * uses min(this, its own ALOE_MAX_TURNS). Lets a tiny, well-specified task
+   * (like the demo one) fail fast instead of wandering.
+   */
+  maxTurns: z.number().int().min(1).max(50).optional(),
 });
 export type TaskSpec = z.infer<typeof TaskSpec>;
 
@@ -405,6 +411,29 @@ export const PublishStatus = z.enum(["pending", "published", "failed"]);
 export type PublishStatus = z.infer<typeof PublishStatus>;
 
 /** GET /api/projects/:id/staging. Where each merged task is on its way to the fork. */
+export const ResetDemoRequest = z.object({
+  /** Also reset the demo fork on GitHub (needs ALOE_PUBLISH_STAGING=1 and a matching GITHUB_DEMO_REPO). */
+  github: z.boolean().optional(),
+});
+export type ResetDemoRequest = z.infer<typeof ResetDemoRequest>;
+
+/** POST /api/demo/reset. `github` is present only when the GitHub reset was requested. */
+export const ResetDemoResponse = z.object({
+  ok: z.literal(true),
+  github: z
+    .object({
+      /** False when refused or failed; `message` says why. The database reset still happened. */
+      ok: z.boolean(),
+      message: z.string(),
+      closedPrs: z.number().int(),
+      /** Branches force-set to the pinned commit, e.g. ["aloe/demo-base", "aloe/staging"]. */
+      resetBranches: z.array(z.string()),
+      commit: z.string().nullable(),
+    })
+    .optional(),
+});
+export type ResetDemoResponse = z.infer<typeof ResetDemoResponse>;
+
 export const StagingStatus = z.object({
   /** False unless the server runs with ALOE_PUBLISH_STAGING=1 and a GITHUB_TOKEN. */
   enabled: z.boolean(),

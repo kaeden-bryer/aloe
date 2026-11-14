@@ -50,6 +50,37 @@ export interface CcfTask {
 
 export const CCF_TASKS: CcfTask[] = [
   {
+    // The DEMO task: tiny and exact on purpose, so the live demo is fast (one file edited, one
+    // test file run, a few model turns). It names the file, the change and the test, so the model
+    // doesn't explore. Dispensable: nothing else depends on it. Claimed first (priority 10).
+    title: "Classify Amazon Q Business Pro index hours as unknown",
+    spec: {
+      goal:
+        "In packages/aws/src/lib/CostAndUsageTypes.ts, add exactly one new entry to the UNKNOWN_USAGE_TYPES array: the string 'Q-Business-Pro-Index-Hours' with the trailing comment // Amazon Q Business Pro knowledge index (managed service, no direct hardware mapping). Put it directly after the existing 'Q-Business-Starter-Index-free' entry. Then, in packages/aws/src/__tests__/AWSInstanceTypes.test.ts, add one new `it` inside the existing describe block that imports UNKNOWN_USAGE_TYPES from '../lib/CostAndUsageTypes' and expects it toContain 'Q-Business-Pro-Index-Hours'. Change nothing else; do not explore other files.",
+      acceptanceCriteria: [
+        "UNKNOWN_USAGE_TYPES contains 'Q-Business-Pro-Index-Hours' with a trailing comment, right after 'Q-Business-Starter-Index-free'",
+        "AWSInstanceTypes.test.ts has one new test asserting the entry is present",
+        "No other files change and the test file passes",
+      ],
+      filesInScope: ["packages/aws/src/lib/CostAndUsageTypes.ts", "packages/aws/src/__tests__/AWSInstanceTypes.test.ts"],
+      category: "feature",
+      // Only this one jest file: seconds instead of the whole aws suite.
+      testCommand: "ccf-link && cd packages/aws && ../../node_modules/.bin/jest src/__tests__/AWSInstanceTypes.test.ts",
+      maxTurns: 8,
+    },
+    priority: 10,
+    hiddenTests: {
+      command: "ccf-link && cd packages/aws && ../../node_modules/.bin/jest hidden_demoUnknownType.test.ts",
+      files: [
+        {
+          path: "packages/aws/src/__tests__/hidden_demoUnknownType.test.ts",
+          content:
+            "import { UNKNOWN_USAGE_TYPES } from '../lib/CostAndUsageTypes'\n\ndescribe('demo unknown usage type (hidden)', () => {\n  it('lists Q-Business-Pro-Index-Hours once and keeps existing entries', () => {\n    expect(UNKNOWN_USAGE_TYPES.filter((t) => t === 'Q-Business-Pro-Index-Hours')).toHaveLength(1)\n    expect(UNKNOWN_USAGE_TYPES).toContain('Q-Business-Starter-Index-free')\n    expect(new Set(UNKNOWN_USAGE_TYPES).size).toBe(UNKNOWN_USAGE_TYPES.length)\n  })\n})\n",
+        },
+      ],
+    },
+  },
+  {
     "title": "Fix infinite loop in ServiceWrapper.getQueryByInterval",
     "spec": {
       "goal": "ServiceWrapper.getQueryByInterval in packages/aws/src/lib/ServiceWrapper.ts splits a date range into consecutive intervals of N days and calls a function for each, but it never advances correctly: for ranges longer than the interval (e.g. 30 days over 2025-10-01..2025-12-30) the while loop never terminates and exhausts memory. Rewrite the loop so it produces contiguous, non-overlapping intervals that start at `start`, each at most `intervalInDays` long, with the last one ending exactly at `end`, and always terminates. Extra args must still be passed through to the function and the result array must contain one result per interval. Add a unit test in packages/aws/src/__tests__/ServiceWrapper.test.ts.",
@@ -169,6 +200,7 @@ export const CCF_TASKS: CcfTask[] = [
       "category": "interface",
       "testCommand": "ccf-link && cd packages/aws && ../../node_modules/.bin/jest"
     },
-    "priority": 1
+    // Second in the queue (after the demo task) so the demo's escalation follows the first merge.
+    "priority": 9
   }
 ];

@@ -29,6 +29,8 @@ import {
   PairResponse,
   ProjectDetail,
   ProjectSummary,
+  ResetDemoRequest,
+  ResetDemoResponse,
   ResolveDecisionRequest,
   StagingStatus,
   SubmitRequest,
@@ -54,6 +56,7 @@ import { mountWeeklyEmail } from "./email/routes.ts";
 import type { EmailSender } from "./email/send.ts";
 import type { GitHubClient } from "./github.ts";
 import { createMaintainerRoutes, type MaintainerDeps } from "./maintainer.ts";
+import { demoResetterFromEnv, type DemoResetter } from "./publish/demo-reset.ts";
 import { publisherFromEnv, stagingStatus, type StagingPublisher } from "./publish/publisher.ts";
 
 const { devices, donors, projects, backings, decisions, tasks, events, submissions } = schema;
@@ -80,6 +83,8 @@ export interface AppOptions {
   steward?: MaintainerDeps["steward"];
   /** Publishes merged work to the fork's aloe/staging branch. Default: from env (ALOE_PUBLISH_STAGING=1 + GITHUB_TOKEN), else off. */
   publisher?: StagingPublisher | null;
+  /** Resets the demo fork on GitHub for POST /api/demo/reset {github:true}. Default: from env; tests inject. */
+  demoResetter?: DemoResetter;
 }
 
 const DEFAULT_DONOR = "demo-donor";
@@ -279,9 +284,12 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
 
   app.route("/api/maintain", createMaintainerRoutes(db, { now, token: opts.maintainerToken, github: opts.github, steward: opts.steward, resolveDecision }));
 
-  app.post("/api/demo/reset", (c) => {
+  app.post("/api/demo/reset", async (c) => {
+    const body = await readBody(c, ResetDemoRequest);
     resetAndSeed(db, now());
-    return c.json({ ok: true });
+    // GitHub part runs after the DB reset; a refusal is reported in the body, not as an HTTP error.
+    const github = body.github ? await (opts.demoResetter ?? demoResetterFromEnv(db)).reset() : undefined;
+    return send(c, ResetDemoResponse, { ok: true, ...(github ? { github } : {}) });
   });
 
   // ================= Maintainer API: hidden tests =================
