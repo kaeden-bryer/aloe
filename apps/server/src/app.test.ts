@@ -190,7 +190,7 @@ describe("agent auth and errors", () => {
 describe("web API", () => {
   it("GET /api/projects returns ProjectSummary[] and filters by cause", async () => {
     const all = z.array(ProjectSummary).parse((await call("/api/projects")).body);
-    expect(all.map((p) => p.id).sort()).toEqual(["accessmod", "biomass", "eae", "farmos", "off"]);
+    expect(all.map((p) => p.id).sort()).toEqual(["accessmod", "biomass", "ccf", "eae", "farmos", "off"]);
     expect(all.filter((p) => p.backing).map((p) => p.id).sort()).toEqual(["eae", "farmos"]);
     expect(all.every((p) => p.openTasks >= 3)).toBe(true);
 
@@ -198,6 +198,22 @@ describe("web API", () => {
     const health = z.array(ProjectSummary).parse((await call("/api/projects?cause=health")).body);
     expect(health.map((p) => p.id).sort()).toEqual(["accessmod", "off"]);
     expect((await call("/api/projects?cause=bogus")).status).toBe(400);
+  });
+
+  it("seeds the Cloud Carbon Footprint project with 5 queued tasks, hidden tests per task, and a sandbox image", async () => {
+    const detail = ProjectDetail.parse((await call("/api/projects/ccf")).body);
+    expect(detail.repoUrl).toContain("kaeden-bryer/cloud-carbon-footprint");
+    expect(detail.queue.filter((t) => t.state === "queued")).toHaveLength(5);
+    // Hidden tests are never in a web response.
+    expect(JSON.stringify(detail)).not.toContain("hidden_");
+
+    // Back it, claim its top code task, and check the lease carries the image but no hidden tests.
+    await call("/api/projects/ccf/back", {}, { donor: "demo-donor-2" });
+    const token = await pair("demo-donor-2");
+    const task = await claim(token, ["code"]);
+    expect(task?.projectId).toBe("ccf");
+    expect(task?.sandboxImage).toBe("aloe-sandbox-ccf");
+    expect(task?.hiddenTests).toBeUndefined();
   });
 
   it("serves causes, project details, me and the dashboard in their contract shapes", async () => {

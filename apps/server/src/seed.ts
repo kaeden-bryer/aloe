@@ -9,6 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { count, eq } from "drizzle-orm";
 import { ESCALATION_OPTIONS, newId, schema, type AloeDb, type TaskSpec, type TaskState } from "@aloe/core";
+import { CCF_BRIEF, CCF_DESIGN, CCF_REPO_URL, CCF_SANDBOX_IMAGE, CCF_TASKS } from "./seed-ccf.ts";
 import { DONORS, PROJECT_EXTRAS, PROJECTS, CAUSES, type SeedTaskSpec } from "./seed-data.ts";
 
 const MIN = 60_000;
@@ -345,6 +346,38 @@ function seedInto(tx: Tx, now: number): void {
 
     for (const q of x.extraQueued) {
       insertTask({ projectId: p.id, kind: "code", title: q.title, spec: specFor(p.id, q.title, q), state: "queued", priority: q.priority ?? 1, createdAt: now - 2 * DAY });
+    }
+  }
+
+  // ---- Cloud Carbon Footprint: a real fork with real tasks (no fake history) ----
+  // Its own block instead of PROJECT_EXTRAS: the design projects all carry
+  // fabricated history and in-flight work, which this honest project shouldn't.
+  tx.insert(schema.projects)
+    .values({
+      id: CCF_DESIGN.id,
+      name: CCF_DESIGN.name,
+      emoji: causeEmoji.get(CCF_DESIGN.cause) ?? "🌱",
+      owner: CCF_DESIGN.owner,
+      cause: CCF_DESIGN.cause,
+      alsoCauses: CCF_DESIGN.also,
+      tagline: CCF_DESIGN.tagline,
+      about: CCF_DESIGN.about,
+      type: CCF_DESIGN.type,
+      region: CCF_DESIGN.region,
+      url: CCF_DESIGN.url,
+      repoUrl: CCF_REPO_URL,
+      sandboxImage: CCF_SANDBOX_IMAGE,
+      brief: CCF_BRIEF,
+      createdAt: now - 30 * DAY,
+    })
+    .run();
+  for (const t of CCF_TASKS) {
+    const id = insertTask({ projectId: CCF_DESIGN.id, kind: "code", title: t.title, spec: t.spec, state: "queued", priority: t.priority, createdAt: now - DAY });
+    // Hidden tests are keyed by the *code* task id; only verify leases receive them.
+    if (t.hiddenTests) {
+      tx.insert(schema.hiddenTests)
+        .values({ projectId: CCF_DESIGN.id, taskId: id, command: t.hiddenTests.command, files: t.hiddenTests.files, updatedAt: now })
+        .run();
     }
   }
 
