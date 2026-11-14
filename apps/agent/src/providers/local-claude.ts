@@ -24,6 +24,7 @@ import { z } from "zod";
 import type { ClaimedTask } from "@aloe/core/contracts";
 import { run, type RunOptions, type RunResult } from "../exec.ts";
 import { applyPatch, diffWorktree, withWorktree } from "../git.ts";
+import { runHiddenTests } from "../hidden-tests.ts";
 import { buildCodePrompt, buildReviewPrompt, parseReviewReply, type ReviewReply } from "../prompt.ts";
 import { tail } from "./docker.ts";
 import type { AgentProvider, CodeResult, VerifyResult } from "./types.ts";
@@ -121,11 +122,22 @@ export class LocalClaudeProvider implements AgentProvider {
         testsPassed = res.code === 0;
         testNote = `\`${task.spec.testCommand}\` exited ${res.code}`;
       }
+      // Hidden tests: same helper as claude-sdk (path checks, symlink refusal),
+      // but this provider has no Docker, so the "sandbox" is a plain host shell
+      // in the throwaway worktree, exactly like the visible tests above.
+      const hidden = await runHiddenTests({
+        worktree: dir,
+        hidden: task.hiddenTests,
+        image: "host",
+        taskDir: dir,
+        signal,
+        sandbox: (o) => run("sh", ["-c", o.shellCommand ?? "false"], { cwd: dir, signal: o.signal }),
+      });
       return {
         testsPassed,
-        hiddenTestsPassed: testsPassed, // TODO: hidden tests fetched from the server
+        hiddenTestsPassed: hidden.passed,
         reviewVerdict: verdict.verdict,
-        notes: `${verdict.notes}\nTests: ${testNote}`.slice(0, 5000),
+        notes: `${verdict.notes}\nTests: ${testNote}\nHidden tests: ${hidden.note}`.slice(0, 5000),
       };
     });
   }
