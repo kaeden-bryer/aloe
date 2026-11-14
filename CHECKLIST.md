@@ -144,7 +144,7 @@ Let one full run go through, then reset again, so the agents' clone caches and t
 1. Signed in as **Kaeden Bryer**, the dashboard shows the live strip. The agents pick up "Classify Amazon Q Business Pro index hours as unknown". It reaches *merged* in about 60 s warm (84 s cold), and the **View PR on GitHub** link appears on the CCF project page.
 2. The agents take the interface task. It escalates about 65 s later. Kaeden's dashboard shows "Waiting on a maintainer" with no buttons. The server also refuses donors (403).
 3. Switch to **Miko Cool** → maintainer console → Decisions → **Approve and merge**. The same PR gets a second commit within seconds.
-4. Open the PR on GitHub: the commits credit each donor and model. Merge it live if you like; it lands on `aloe/demo-base`.
+4. Open the PR on GitHub: the commits credit each donor and model. **Merge it live**; it lands on `aloe/demo-base`. Within ~20 s, Kaeden's dashboard "Landed" row for CCF flips to **Shipped** and the project page link reads "Merged on GitHub ✓". That's the bookend (verified 15 Nov: 7 s, no page open).
 5. Stop the agents (Ctrl-C hands work back), then as Miko: **Reset demo + GitHub**. That takes about 10 s: it closes the PR, puts both `aloe/*` branches back to the pin, and reseeds the DB. Restart the agents for the next judge.
 
 Real test (15 Nov): reset 9 s → demo task merged at +84 s (cold clone) → PR #1 opened (`aloe/staging` → `aloe/demo-base`) → interface task escalated at +149 s → donor approve refused (403) → Miko approved → PR updated to 2 commits → reset closed PR #1, both branches back at `f584c54`, `trunk` untouched.
