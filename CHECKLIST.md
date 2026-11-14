@@ -93,6 +93,8 @@ gh repo create aloe --private --source=. --push    # or create it on github.com 
 
 ## Phase 6 · Demo day
 
+- [x] [claude] Roles: sessions + per-project maintainers, demo "Sign in as" picker (Kaeden Bryer = donor, Miko Cool = CCF maintainer); donors see decisions read-only
+- [x] [claude] Repeatable demo: "Reset demo + GitHub" (DB + fork's `aloe/*` branches + PR), fast pinned demo task, PR targets `aloe/demo-base`, "View PR on GitHub" link
 - [ ] [claude] "Overnight, sped up" mode: a server flag that compresses the donation window and lease times
 - [ ] [claude] Demo script page or seed preset matching the 3-minute story
 - [ ] **[you]** Rehearse: project onboards → donor picks "Climate, Helsinki" → agents work → one decision → email arrives
@@ -125,3 +127,26 @@ Your turn (**[you]**):
 4. Rebuild `aloe-sandbox-ccf` (`docker/sandbox-ccf/build.sh`) if the fork's `yarn.lock` changes.
 
 Known rough edges: the seed gives the CCF infinite-loop task the highest priority, so it's claimed first (bump task 2 for a quick demo). That task has only been tested at the timeout level, not run for real. There are two small GitHub client modules (`apps/server/src/github.ts` for issue import, `apps/server/src/publish/github.ts` for PRs) that could be merged later. The publisher creates its own `staging_publishes` table instead of going through `migrate.ts`.
+
+---
+
+## Demo runbook (5 minutes per judge), verified against the real fork on 15 Nov
+
+**`.env` for demo day** (on top of what's there): `ALOE_DEMO_LOGIN=1`, `ALOE_PUBLISH_STAGING=1`,
+`ALOE_STAGING_BASE=aloe/demo-base`, `ALOE_IDLE_RETRY_MS=1000`. With publishing on, every merge
+pushes to `aloe/staging` on your fork and updates one PR into `aloe/demo-base`. `trunk` is never touched.
+
+**Before judges arrive:** `pnpm dev`, then sign in as **Miko Cool** → Settings → **Reset demo + GitHub**.
+Start both agents with `--provider claude-sdk`: Kaeden codes, Mikko verifies, and both back only CCF.
+Let one full run go through, then reset again, so the agents' clone caches and the Docker image are warm.
+
+**Per judge:**
+1. Signed in as **Kaeden Bryer**, the dashboard shows the live strip. The agents pick up "Classify Amazon Q Business Pro index hours as unknown". It reaches *merged* in about 60 s warm (84 s cold), and the **View PR on GitHub** link appears on the CCF project page.
+2. The agents take the interface task. It escalates about 65 s later. Kaeden's dashboard shows "Waiting on a maintainer" with no buttons. The server also refuses donors (403).
+3. Switch to **Miko Cool** → maintainer console → Decisions → **Approve and merge**. The same PR gets a second commit within seconds.
+4. Open the PR on GitHub: the commits credit each donor and model. Merge it live if you like; it lands on `aloe/demo-base`.
+5. Stop the agents (Ctrl-C hands work back), then as Miko: **Reset demo + GitHub**. That takes about 10 s: it closes the PR, puts both `aloe/*` branches back to the pin, and reseeds the DB. Restart the agents for the next judge.
+
+Real test (15 Nov): reset 9 s → demo task merged at +84 s (cold clone) → PR #1 opened (`aloe/staging` → `aloe/demo-base`) → interface task escalated at +149 s → donor approve refused (403) → Miko approved → PR updated to 2 commits → reset closed PR #1, both branches back at `f584c54`, `trunk` untouched.
+
+Notes: the demo task's usage type is invented for the demo (say so if asked). Don't press reset while a publish is in flight. Keep a screen recording of one good run as a fallback.
