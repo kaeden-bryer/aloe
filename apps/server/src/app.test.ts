@@ -241,7 +241,7 @@ describe("web API", () => {
 // ---------- hidden tests ----------
 
 describe("hidden tests", () => {
-  const KEY = { "x-aloe-maintainer-key": "aloe-maintainer-demo" };
+  const KEY = { "x-aloe-maintainer": "aloe-maintainer-demo" };
   const suite = { command: "node hidden/check.mjs", files: [{ path: "hidden/check.mjs", content: "process.exit(0)" }] };
   const put = (projectId: string, body: unknown, query = "", headers: Record<string, string> = KEY) =>
     app.request(`/api/projects/${projectId}/hidden-tests${query}`, {
@@ -281,7 +281,7 @@ describe("hidden tests", () => {
 
   it("is maintainer-only and validates file paths", async () => {
     expect((await put("eae", suite, "", {})).status).toBe(401);
-    expect((await put("eae", suite, "", { "x-aloe-maintainer-key": "wrong" })).status).toBe(401);
+    expect((await put("eae", suite, "", { "x-aloe-maintainer": "wrong" })).status).toBe(401);
     for (const path of ["../x", "/etc/passwd", ".git/hooks/pre-commit", "a/../../b", "C:\\x"]) {
       expect((await put("eae", { command: "true", files: [{ path, content: "" }] })).status, path).toBe(400);
     }

@@ -25,9 +25,9 @@ worktree, runs `command` in the sandbox, and reports `hiddenTestsPassed`
 (`true` with note "no hidden tests" when none were sent). A `false` never
 merges: routing sends it to `retry`, or to a maintainer after 3 attempts.
 
-## Maintainer API — `x-aloe-maintainer-key: <key>` header
+## Maintainer API — `x-aloe-maintainer: <key>` header
 
-Key = env `ALOE_MAINTAINER_KEY` (default `aloe-maintainer-demo`), constant-time
+Key = env `ALOE_MAINTAINER_TOKEN` (default `aloe-maintainer-demo`), constant-time
 compared; real maintainer accounts replace it later. Not donor-header auth.
 
 | Method | Path | Body | Response |

@@ -66,8 +66,6 @@ export interface AppOptions {
   now?: () => number;
   /** Shared secret agents use to pair. Defaults to env ALOE_DEMO_PAIRING_CODE, then "aloe-demo". */
   pairingCode?: string;
-  /** Shared secret for maintainer routes (hidden tests). Defaults to env ALOE_MAINTAINER_KEY, then "aloe-maintainer-demo". */
-  maintainerKey?: string;
   /** Built web app to serve at `/`. Defaults to apps/web/dist; pass null to disable. */
   webDist?: string | null;
   /** Email provider for the weekly report. Omit to use RESEND_API_KEY; null = not configured. */
@@ -263,16 +261,16 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
   });
 
   // ================= Maintainer API: hidden tests =================
-  // Auth: a shared maintainer key in `x-aloe-maintainer-key` (env ALOE_MAINTAINER_KEY,
-  // default "aloe-maintainer-demo"), compared in constant time. Same idea as the
+  // Auth: the same demo maintainer token as /api/maintain/* (header `x-aloe-maintainer`,
+  // env ALOE_MAINTAINER_TOKEN, default "aloe-maintainer-demo"), compared in constant time. Same idea as the
   // pairing code: the demo has no maintainer accounts yet. These routes are NOT
   // under the donor-identity header, because donors must never read hidden tests.
   // The web app never calls them; hidden tests appear in no web/public response.
 
   const requireMaintainer = (c: Context) => {
-    const given = c.req.header("x-aloe-maintainer-key") ?? "";
-    const expected = opts.maintainerKey ?? process.env.ALOE_MAINTAINER_KEY ?? "aloe-maintainer-demo";
-    if (!given || !secretsMatch(given, expected)) throw new HttpError(401, "unauthorized", "Maintainer key required");
+    const given = c.req.header("x-aloe-maintainer") ?? "";
+    const expected = opts.maintainerToken ?? process.env.ALOE_MAINTAINER_TOKEN ?? "aloe-maintainer-demo";
+    if (!given || !secretsMatch(given, expected)) throw new HttpError(401, "unauthorized", "Maintainer token required");
   };
   /** "" = project-wide; otherwise a code task of this project that gets its own override. */
   const hiddenScope = (c: Context, projectId: string) => {

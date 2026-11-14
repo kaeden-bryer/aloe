@@ -12,3 +12,6 @@ coverage/
 
 # leftover from the initial copy; safe to delete
 .aloe-src.tgz
+
+# Claude Code agent worktrees
+.claude/worktrees/

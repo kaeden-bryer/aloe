@@ -28,7 +28,8 @@ beforeAll(async () => {
 
 afterAll(() => rm(root, { recursive: true, force: true }));
 
-describe("git worktrees", () => {
+// Real git clones + worktrees: fast when idle, but can take 10s+ on a loaded machine.
+describe("git worktrees", { timeout: 60_000 }, () => {
   it("applies the fake patch in a fresh worktree and diffs it back", async () => {
     const task = makeTask("code", 0);
     let worktree = "";
