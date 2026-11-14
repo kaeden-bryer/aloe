@@ -26,7 +26,7 @@ import type { AloeDb } from "./db.ts";
 import type { ClaimedTask, SubmitRequest, TaskKind, TaskSpec, VerifyResultRequest } from "./contracts.ts";
 import { explainEscalation, route, type RouteInput, type RouteOutcome } from "./routing.ts";
 import { assertTransition, IllegalTransitionError, type TaskState } from "./states.ts";
-import { backings, decisions, donors, events, projects, submissions, tasks, verifications } from "./schema.ts";
+import { backings, decisions, donors, events, hiddenTests, projects, submissions, tasks, verifications } from "./schema.ts";
 import { newId } from "./ids.ts";
 
 export const DEFAULT_LEASE_MS = 5 * 60_000; // 5 minutes, renewed by heartbeats every ~60s
@@ -129,9 +129,18 @@ export function claimTask(db: AloeDb, input: ClaimInput): ClaimedTask | null {
       const project = tx.select({ repoUrl: projects.repoUrl }).from(projects).where(eq(projects.id, task.projectId)).get();
 
       let review: ClaimedTask["review"];
+      let hidden: ClaimedTask["hiddenTests"];
       if (task.kind === "verify" && task.reviewsSubmissionId) {
         const sub = tx.select().from(submissions).where(eq(submissions.id, task.reviewsSubmissionId)).get();
-        if (sub) review = { submissionId: sub.id, patch: sub.patch, summary: sub.summary };
+        if (sub) {
+          review = { submissionId: sub.id, patch: sub.patch, summary: sub.summary };
+          // Hidden tests are attached ONLY here, on verify leases: the patch
+          // author's agent (a code lease) must never see them, or it could
+          // write code that special-cases the tests. A task-level row beats the project-level one.
+          const rows = tx.select().from(hiddenTests).where(eq(hiddenTests.projectId, task.projectId)).all();
+          const row = rows.find((r) => r.taskId === sub.taskId) ?? rows.find((r) => r.taskId === "");
+          if (row) hidden = { command: row.command, files: row.files };
+        }
       }
 
       return {
@@ -144,6 +153,7 @@ export function claimTask(db: AloeDb, input: ClaimInput): ClaimedTask | null {
         leaseToken,
         leaseExpiresAt,
         ...(review ? { review } : {}),
+        ...(hidden ? { hiddenTests: hidden } : {}),
       };
     },
     { behavior: "immediate" },

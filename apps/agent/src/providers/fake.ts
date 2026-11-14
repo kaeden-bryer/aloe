@@ -5,19 +5,24 @@
  */
 import type { ClaimedTask } from "@aloe/core/contracts";
 import { systemClock, type Clock } from "../clock.ts";
+import { NO_HIDDEN_TESTS_NOTE } from "../hidden-tests.ts";
 import type { AgentProvider, CodeResult, VerifyResult } from "./types.ts";
 
 export interface FakeProviderOptions {
   delayMs?: number;
   clock?: Clock;
+  /** Test-only: make the fake hidden-test run fail. Env ALOE_FAKE_HIDDEN_FAIL=1 sets it for demos. */
+  failHiddenTests?: boolean;
 }
 
 export class FakeProvider implements AgentProvider {
   readonly name = "fake";
   private readonly delayMs: number;
   private readonly clock: Clock;
+  private readonly failHiddenTests: boolean;
 
   constructor(opts: FakeProviderOptions = {}) {
+    this.failHiddenTests = opts.failHiddenTests ?? process.env.ALOE_FAKE_HIDDEN_FAIL === "1";
     this.delayMs = opts.delayMs ?? 3000;
     this.clock = opts.clock ?? systemClock;
   }
@@ -32,13 +37,19 @@ export class FakeProvider implements AgentProvider {
     };
   }
 
-  async runVerifyTask(_task: ClaimedTask, signal: AbortSignal): Promise<VerifyResult> {
+  async runVerifyTask(task: ClaimedTask, signal: AbortSignal): Promise<VerifyResult> {
     await this.work(signal);
+    // No Docker here, so "running" hidden tests is deterministic: they pass
+    // unless the test-only flag says otherwise. Without any, the note says so.
+    const hiddenTestsPassed = !this.failHiddenTests;
+    const hiddenNote = task.hiddenTests
+      ? `Hidden tests (${task.hiddenTests.files.length} files): fake run ${hiddenTestsPassed ? "passed" : "failed"}`
+      : NO_HIDDEN_TESTS_NOTE;
     return {
       testsPassed: true,
-      hiddenTestsPassed: true,
+      hiddenTestsPassed: task.hiddenTests ? hiddenTestsPassed : true,
       reviewVerdict: "approve",
-      notes: "Fake provider: approved without looking.",
+      notes: `Fake provider: approved without looking.\n${hiddenNote}`,
     };
   }
 

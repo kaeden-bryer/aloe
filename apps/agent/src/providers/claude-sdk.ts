@@ -16,6 +16,7 @@ import { z } from "zod";
 import type { ClaimedTask } from "@aloe/core/contracts";
 import type { RunResult } from "../exec.ts";
 import { applyPatch, diffWorktree, guardGitPointer, withWorktree } from "../git.ts";
+import { runHiddenTests } from "../hidden-tests.ts";
 import { parseReviewReply } from "../prompt.ts";
 import { runSandbox, tail, withTaskDir } from "./docker.ts";
 import type { AgentProvider, CodeResult, VerifyResult } from "./types.ts";
@@ -128,12 +129,22 @@ export class ClaudeSdkProvider implements AgentProvider {
             testNote = `\`${task.spec.testCommand}\` exited ${testRun.code}`;
           }
 
+          // Hidden tests ride along on the verify lease. They run last because
+          // writing them into the worktree changes it (the review already saw the clean tree).
+          const hidden = await runHiddenTests({
+            worktree,
+            hidden: task.hiddenTests,
+            image: this.image,
+            taskDir,
+            signal,
+            timeoutMs: this.opts.testTimeoutMs,
+          });
+
           return {
             testsPassed,
-            // TODO: fetch hidden tests from the server and run them too.
-            hiddenTestsPassed: testsPassed,
+            hiddenTestsPassed: hidden.passed,
             reviewVerdict: verdict?.verdict ?? "unsure",
-            notes: `${verdict?.notes ?? `review run failed: ${tail(reviewRun.stderr)}`}\nTests: ${testNote}`.slice(0, 5000),
+            notes: `${verdict?.notes ?? `review run failed: ${tail(reviewRun.stderr)}`}\nTests: ${testNote}\n${hidden.note}`.slice(0, 5000),
           };
         } finally {
           await restoreGit();

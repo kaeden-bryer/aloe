@@ -143,3 +143,22 @@ export const events = sqliteTable(
   },
   (t) => [index("events_donor_ts_idx").on(t.donorId, t.ts)],
 );
+
+// ---- Hidden tests (own section, added by the hidden-tests feature) ----
+/**
+ * Hidden tests a maintainer registers. One row per project (task_id = '') plus
+ * optional per-task overrides (task_id = the code task's id). A task-level row
+ * wins over the project-level one. Only claimTask for a verify lease reads this.
+ */
+export const hiddenTests = sqliteTable(
+  "hidden_tests",
+  {
+    projectId: text("project_id").notNull().references(() => projects.id),
+    /** '' means "the whole project". Not NULL because SQLite treats NULLs as distinct in a primary key. */
+    taskId: text("task_id").notNull().default(""),
+    command: text("command").notNull(),
+    files: text("files", { mode: "json" }).$type<{ path: string; content: string }[]>().notNull().default([]),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.taskId] })],
+);

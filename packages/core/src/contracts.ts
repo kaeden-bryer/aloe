@@ -83,6 +83,32 @@ export const SubmissionForReview = z.object({
   summary: z.string(),
 });
 
+// ---------- Hidden tests (maintainer-owned, handed only to verify leases) ----------
+
+const pathSegments = (p: string) => p.split(/[\\/]/);
+
+/**
+ * A repo-relative path we are willing to write into a worktree. Hidden-test
+ * files are written to disk by the donor's agent, so a hostile path like
+ * "../../.ssh/authorized_keys" or ".git/hooks/pre-commit" must never validate.
+ */
+export const SafeRelativePath = z
+  .string()
+  .min(1)
+  .max(300)
+  .refine((p) => !p.startsWith("/") && !p.startsWith("\\") && !/^[A-Za-z]:/.test(p), "must be repo-relative")
+  .refine((p) => !p.includes("\0"), "must not contain NUL")
+  .refine((p) => !pathSegments(p).includes(".."), "must not contain '..' segments")
+  .refine((p) => pathSegments(p).filter(Boolean)[0]?.toLowerCase() !== ".git", "must not be inside .git/");
+
+/** Tests the author of a patch never sees: the verifier writes these files in, then runs `command`. */
+export const HiddenTests = z.object({
+  /** Shell command run in the sandbox after the files are written, e.g. "node --test hidden/". */
+  command: z.string().max(300),
+  files: z.array(z.object({ path: SafeRelativePath, content: z.string().max(200_000) })).max(20),
+});
+export type HiddenTests = z.infer<typeof HiddenTests>;
+
 export const ClaimedTask = z.object({
   id: z.string(),
   kind: TaskKind,
@@ -94,6 +120,8 @@ export const ClaimedTask = z.object({
   leaseToken: z.number().int(),
   leaseExpiresAt: z.number().int(),
   review: SubmissionForReview.optional(),
+  /** Only ever present on verify leases. Code leases (the patch author) never get these. */
+  hiddenTests: HiddenTests.optional(),
 });
 export type ClaimedTask = z.infer<typeof ClaimedTask>;
 

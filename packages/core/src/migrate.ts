@@ -126,4 +126,13 @@ CREATE TABLE IF NOT EXISTS events (
   data TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS events_donor_ts_idx ON events (donor_id, ts);
+
+CREATE TABLE IF NOT EXISTS hidden_tests (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  task_id TEXT NOT NULL DEFAULT '',
+  command TEXT NOT NULL,
+  files TEXT NOT NULL DEFAULT '[]',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, task_id)
+);
 `;
