@@ -17,6 +17,7 @@ import {
   platformStats,
   toProjectDetail,
 } from "./fixtures";
+import { maintainerRoute } from "./mockMaintainer";
 
 interface MockState {
   settings: DonorSettings;
@@ -197,6 +198,15 @@ const badRequest = (error: string): Reply => ({ status: 400, json: { error, code
 function route(method: string, url: URL, body: unknown): Reply {
   const path = url.pathname;
   let m: RegExpMatchArray | null;
+
+  // Maintainer area: decisions reuse the donor-side state; the rest lives in mockMaintainer.ts.
+  if ((m = path.match(/^\/api\/maintain\/projects\/([^/]+)\/decisions(?:\/([^/]+)\/resolve)?$/))) {
+    if (!project(m[1]!)) return notFound("Project");
+    if (!m[2]) return ok(openDecisions().filter((d) => d.projectId === m![1]));
+    return route(method, new URL(`/api/decisions/${m[2]}/resolve`, url), body);
+  }
+  const maintained = maintainerRoute(method, path, body, (id) => !!project(id));
+  if (maintained) return maintained;
 
   if (method === "GET" && path === "/api/causes") return ok(causes);
   if (method === "GET" && path === "/api/projects") {

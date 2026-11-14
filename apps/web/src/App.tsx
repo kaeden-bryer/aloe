@@ -11,6 +11,7 @@ import { Market } from "./screens/Market";
 import { Onboarding } from "./screens/Onboarding";
 import { ProjectPage } from "./screens/ProjectPage";
 import { Settings } from "./screens/Settings";
+import { MaintainerPage } from "./screens/maintainer/MaintainerPage";
 
 export function App() {
   return (
@@ -23,6 +24,7 @@ export function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/market" element={<Market />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
+          <Route path="/maintain/:projectId" element={<MaintainerPage />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

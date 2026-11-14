@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import type { ProjectDetail } from "@aloe/core/contracts";
 import { useCauses, useMe, useProject, useToggleBacking } from "../api/hooks";
 import { DecisionOptions } from "../components/DecisionOptions";
@@ -153,6 +153,12 @@ function ProjectBody({ p }: { p: ProjectDetail }) {
                   </button>
                 </div>
               )}
+            </div>
+
+            <div className="side-card">
+              <h3>Maintain this project</h3>
+              <p>Interview, approve imported issues, and answer escalations.</p>
+              <Link to={`/maintain/${p.id}`} className="btn-outline" style={{ display: "inline-block", marginTop: 10, textDecoration: "none" }}>Open maintainer tools</Link>
             </div>
 
             <div className="steward-card">
