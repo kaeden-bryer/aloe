@@ -25,6 +25,9 @@ import {
 /** The demo identity. Real sign-in replaces this header later. */
 export const DONOR_ID = "demo-donor";
 
+/** Demo maintainer token (server default); override with VITE_ALOE_MAINTAINER_TOKEN. */
+export const MAINTAINER_TOKEN = import.meta.env.VITE_ALOE_MAINTAINER_TOKEN ?? "aloe-maintainer-demo";
+
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === "1";
 
 const Ok = z.object({ ok: z.literal(true) });
@@ -42,7 +45,7 @@ export class ApiRequestError extends Error {
 
 type Method = "GET" | "POST" | "PUT" | "DELETE";
 
-async function request<T>(method: Method, path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
+export async function request<T>(method: Method, path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
   let status: number;
   let json: unknown;
 
@@ -55,6 +58,7 @@ async function request<T>(method: Method, path: string, schema: z.ZodType<T>, bo
       method,
       headers: {
         "x-aloe-donor": DONOR_ID,
+        ...(path.startsWith("/api/maintain/") ? { "x-aloe-maintainer": MAINTAINER_TOKEN } : {}),
         ...(body !== undefined ? { "content-type": "application/json" } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,

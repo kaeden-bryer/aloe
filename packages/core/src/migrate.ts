@@ -135,4 +135,14 @@ CREATE TABLE IF NOT EXISTS hidden_tests (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (project_id, task_id)
 );
+CREATE TABLE IF NOT EXISTS task_drafts (
+  id TEXT PRIMARY KEY NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  source_issue INTEGER,
+  spec TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  task_id TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS task_drafts_project_idx ON task_drafts (project_id, status);
 `;

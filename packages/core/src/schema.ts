@@ -162,3 +162,24 @@ export const hiddenTests = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.projectId, t.taskId] })],
 );
+
+/**
+ * Steward-written tasks awaiting maintainer approval. A separate table from
+ * `tasks` on purpose: the claim query only reads `tasks`, so a draft can never
+ * be handed to an agent by accident. Approving inserts a real queued task.
+ */
+export const taskDrafts = sqliteTable(
+  "task_drafts",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull().references(() => projects.id),
+    /** GitHub issue number it came from; used to avoid importing the same issue twice. */
+    sourceIssue: integer("source_issue"),
+    spec: text("spec", { mode: "json" }).$type<TaskSpec>().notNull(),
+    status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
+    /** Set when approved: the real task this draft became. */
+    taskId: text("task_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("task_drafts_project_idx").on(t.projectId, t.status)],
+);

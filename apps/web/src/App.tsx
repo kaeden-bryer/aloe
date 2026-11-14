@@ -12,6 +12,7 @@ import { Onboarding } from "./screens/Onboarding";
 import { ProjectPage } from "./screens/ProjectPage";
 import { Settings } from "./screens/Settings";
 import { WeeklyEmailPreview } from "./screens/WeeklyEmailPreview";
+import { MaintainerPage } from "./screens/maintainer/MaintainerPage";
 
 export function App() {
   return (
@@ -24,6 +25,7 @@ export function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/market" element={<Market />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
+          <Route path="/maintain/:projectId" element={<MaintainerPage />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/weekly-email" element={<WeeklyEmailPreview />} />
         </Route>

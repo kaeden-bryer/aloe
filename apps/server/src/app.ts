@@ -51,6 +51,8 @@ import { getMe, getProject, listDecisions, listProjects, toDecision } from "./vi
 import { SERVER_ROOT } from "./database.ts";
 import { mountWeeklyEmail } from "./email/routes.ts";
 import type { EmailSender } from "./email/send.ts";
+import type { GitHubClient } from "./github.ts";
+import { createMaintainerRoutes, type MaintainerDeps } from "./maintainer.ts";
 
 const { devices, donors, projects, backings, decisions, tasks, events, submissions } = schema;
 
@@ -70,6 +72,12 @@ export interface AppOptions {
   webDist?: string | null;
   /** Email provider for the weekly report. Omit to use RESEND_API_KEY; null = not configured. */
   emailSender?: EmailSender | null;
+  /** Maintainer area: demo token (default env ALOE_MAINTAINER_TOKEN, then "aloe-maintainer-demo"). */
+  maintainerToken?: string;
+  /** Maintainer area: GitHub client, injected in tests. */
+  github?: GitHubClient;
+  /** Maintainer area: steward functions, injectable in tests. */
+  steward?: MaintainerDeps["steward"];
 }
 
 const DEFAULT_DONOR = "demo-donor";
@@ -246,6 +254,8 @@ export function createApp(db: AloeDb, opts: AppOptions = {}) {
     const decision = resolveDecision(db, c.req.param("id"), body, donorIdOf(c), now());
     return send(c, Decision, decision);
   });
+
+  app.route("/api/maintain", createMaintainerRoutes(db, { now, token: opts.maintainerToken, github: opts.github, steward: opts.steward, resolveDecision }));
 
   app.post("/api/demo/reset", (c) => {
     resetAndSeed(db, now());

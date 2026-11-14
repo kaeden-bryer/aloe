@@ -34,6 +34,7 @@ export function resetAndSeed(db: AloeDb, now: number): void {
     for (const table of [
       schema.hiddenTests,
       schema.events,
+      schema.taskDrafts,
       schema.decisions,
       schema.verifications,
       schema.submissions,
