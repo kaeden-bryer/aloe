@@ -12,8 +12,10 @@ import { z } from "zod";
 import {
   ApiError,
   Cause,
+  AuthMe,
   Dashboard,
   Decision,
+  DemoUser,
   Me,
   ProjectDetail,
   ProjectSummary,
@@ -21,12 +23,6 @@ import {
   WeeklyEmailSendResponse,
   type DonorSettings,
 } from "@aloe/core/contracts";
-
-/** The demo identity. Real sign-in replaces this header later. */
-export const DONOR_ID = "demo-donor";
-
-/** Demo maintainer token (server default); override with VITE_ALOE_MAINTAINER_TOKEN. */
-export const MAINTAINER_TOKEN = import.meta.env.VITE_ALOE_MAINTAINER_TOKEN ?? "aloe-maintainer-demo";
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === "1";
 
@@ -56,11 +52,10 @@ export async function request<T>(method: Method, path: string, schema: z.ZodType
   } else {
     const res = await fetch(path, {
       method,
-      headers: {
-        "x-aloe-donor": DONOR_ID,
-        ...(path.startsWith("/api/maintain/") ? { "x-aloe-maintainer": MAINTAINER_TOKEN } : {}),
-        ...(body !== undefined ? { "content-type": "application/json" } : {}),
-      },
+      // No identity header: who you are travels in the httpOnly `aloe_session` cookie,
+      // which the browser attaches by itself (page scripts can't even read it).
+      headers: body !== undefined ? { "content-type": "application/json" } : {},
+      credentials: "same-origin",
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     status = res.status;
@@ -89,8 +84,11 @@ export const api = {
   saveSettings: (settings: DonorSettings) => request("PUT", "/api/me/settings", Me, settings),
   dashboard: () => request("GET", "/api/me/dashboard", Dashboard),
   decisions: () => request("GET", "/api/decisions?status=open", z.array(Decision)),
-  resolveDecision: (id: string, optionId: string, note?: string) =>
-    request("POST", `/api/decisions/${encodeURIComponent(id)}/resolve`, Decision, { optionId, note }),
+  // Resolving a decision is a maintainer action: see maintainApi.resolve in maintainer.ts.
   sendWeeklyEmail: () => request("POST", "/api/me/weekly-email/send", WeeklyEmailSendResponse),
+  authMe: () => request("GET", "/api/auth/me", AuthMe),
+  demoUsers: () => request("GET", "/api/auth/demo-users", z.array(DemoUser)),
+  demoLogin: (userId: string) => request("POST", "/api/auth/demo-login", AuthMe, { userId }),
+  logout: () => request("POST", "/api/auth/logout", Ok),
   resetDemo: () => request("POST", "/api/demo/reset", Ok),
 };

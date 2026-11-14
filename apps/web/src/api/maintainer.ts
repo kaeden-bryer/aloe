@@ -40,7 +40,7 @@ const mkeys = {
 
 export const useBrief = (id: string) => useQuery({ queryKey: mkeys.brief(id), queryFn: () => maintainApi.brief(id) });
 export const useDrafts = (id: string) => useQuery({ queryKey: mkeys.drafts(id), queryFn: () => maintainApi.drafts(id) });
-export const useInbox = (id: string) => useQuery({ queryKey: mkeys.decisions(id), queryFn: () => maintainApi.decisions(id) });
+export const useInbox = (id: string, enabled = true) => useQuery({ queryKey: mkeys.decisions(id), queryFn: () => maintainApi.decisions(id), enabled });
 
 export function useOnboard(id: string) {
   const qc = useQueryClient();

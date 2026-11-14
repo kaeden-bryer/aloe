@@ -10,6 +10,8 @@ import type { DonorSettings, Me } from "@aloe/core/contracts";
 import { api } from "./client";
 
 export const keys = {
+  auth: ["auth"] as const,
+  demoUsers: ["auth", "demo-users"] as const,
   causes: ["causes"] as const,
   projects: ["projects"] as const,
   project: (id: string) => ["projects", id] as const,
@@ -26,13 +28,30 @@ export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: ()
 
 export const useProject = (id: string) => useQuery({ queryKey: keys.project(id), queryFn: () => api.project(id) });
 
-export const useMe = () => useQuery({ queryKey: keys.me, queryFn: api.me });
+/** Who is signed in (null user = signed out) and which projects they maintain. Everything else waits on this. */
+export const useAuth = () => useQuery({ queryKey: keys.auth, queryFn: api.authMe, retry: false, staleTime: 60_000 });
+
+/** True once we know someone is signed in: donor-only queries stay idle until then (they'd just 401). */
+const useSignedIn = () => !!useAuth().data?.user;
+
+/** Demo personas for the "Sign in as" picker. Errors (404) when the server has demo login off. */
+export const useDemoUsers = () => useQuery({ queryKey: keys.demoUsers, queryFn: api.demoUsers, retry: false });
+
+export const useMe = () => {
+  const enabled = useSignedIn();
+  return useQuery({ queryKey: keys.me, queryFn: api.me, enabled });
+};
 
 /** Polls every 3 s so the live "Claimed / Working / Verify / Merge" strip moves during the demo. */
-export const useDashboard = () =>
-  useQuery({ queryKey: keys.dashboard, queryFn: api.dashboard, refetchInterval: 3000 });
+export const useDashboard = () => {
+  const enabled = useSignedIn();
+  return useQuery({ queryKey: keys.dashboard, queryFn: api.dashboard, refetchInterval: 3000, enabled });
+};
 
-export const useOpenDecisions = () => useQuery({ queryKey: keys.decisions, queryFn: api.decisions });
+export const useOpenDecisions = () => {
+  const enabled = useSignedIn();
+  return useQuery({ queryKey: keys.decisions, queryFn: api.decisions, enabled });
+};
 
 // ---------- Mutations ----------
 
@@ -91,16 +110,30 @@ export function useStartDonating() {
   });
 }
 
-export function useResolveDecision() {
+/**
+ * Demo sign-in / switch persona. Everything cached belongs to the previous user
+ * (backings, dashboard, "can I maintain this"), so reset every query but the
+ * new auth answer and let the screens refetch as the new person.
+ */
+export function useSwitchUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, optionId }: { id: string; optionId: string }) => api.resolveDecision(id, optionId),
-    onSettled: () =>
-      Promise.all([
-        qc.invalidateQueries({ queryKey: keys.decisions }),
-        qc.invalidateQueries({ queryKey: keys.dashboard }),
-        qc.invalidateQueries({ queryKey: keys.projects }),
-      ]),
+    mutationFn: api.demoLogin,
+    onSuccess: async (auth) => {
+      qc.setQueryData(keys.auth, auth);
+      await qc.resetQueries({ predicate: (q) => q.queryKey[0] !== keys.auth[0] });
+    },
+  });
+}
+
+export function useSignOut() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.logout,
+    onSuccess: () => {
+      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== keys.auth[0] });
+      qc.setQueryData(keys.auth, { user: null, maintainerOf: [] });
+    },
   });
 }
 
@@ -108,7 +141,7 @@ export function useResetDemo() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.resetDemo,
-    // Everything cached belongs to the old demo state, so drop it all.
-    onSuccess: () => qc.clear(),
+    // Everything cached belongs to the old demo state, so drop it all (but keep who is signed in: a reset doesn't sign you out).
+    onSuccess: () => qc.removeQueries({ predicate: (q) => q.queryKey[0] !== keys.auth[0] }),
   });
 }

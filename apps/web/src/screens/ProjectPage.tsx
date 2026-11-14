@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import type { ProjectDetail } from "@aloe/core/contracts";
-import { useCauses, useMe, useProject, useToggleBacking } from "../api/hooks";
+import { useAuth, useCauses, useMe, useProject, useToggleBacking } from "../api/hooks";
 import { DecisionOptions } from "../components/DecisionOptions";
 import { CheckIcon, PlusIcon, WarningIcon } from "../components/Icons";
 import { StatusPill } from "../components/StatusPill";
@@ -32,6 +32,7 @@ function ProjectBody({ p }: { p: ProjectDetail }) {
   const flash = useToast();
   const { data: causes = [] } = useCauses();
   const { data: me } = useMe();
+  const { data: auth } = useAuth();
   const toggle = useToggleBacking();
 
   const toggleBack = () => {
@@ -155,11 +156,14 @@ function ProjectBody({ p }: { p: ProjectDetail }) {
               )}
             </div>
 
-            <div className="side-card">
-              <h3>Maintain this project</h3>
-              <p>Interview, approve imported issues, and answer escalations.</p>
-              <Link to={`/maintain/${p.id}`} className="btn-outline" style={{ display: "inline-block", marginTop: 10, textDecoration: "none" }}>Open maintainer tools</Link>
-            </div>
+            {/* Only this project's maintainers see the way in; the server checks it again on every call. */}
+            {auth?.maintainerOf.includes(p.id) && (
+              <div className="side-card">
+                <h3>Maintain this project</h3>
+                <p>Interview, approve imported issues, and answer escalations.</p>
+                <Link to={`/maintain/${p.id}`} className="btn-outline" style={{ display: "inline-block", marginTop: 10, textDecoration: "none" }}>Open maintainer tools</Link>
+              </div>
+            )}
 
             <div className="steward-card">
               <h3>How the steward decides</h3>
