@@ -1,0 +1,23 @@
+{
+  "name": "aloe",
+  "private": true,
+  "description": "Aloe: Directing AI Use to Heal Society",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @aloe/server --filter @aloe/web dev",
+    "dev:server": "pnpm --filter @aloe/server dev",
+    "dev:web": "pnpm --filter @aloe/web dev",
+    "agent": "pnpm --filter @aloe/agent start",
+    "seed": "pnpm --filter @aloe/server seed",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# better-sqlite3 and esbuild ship native binaries; pnpm 10 asks before running
+# install scripts, so we allow these two explicitly.
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild

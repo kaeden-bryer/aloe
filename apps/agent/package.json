@@ -1,0 +1,24 @@
+{
+  "name": "@aloe/agent",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Aloe donor agent: pulls tasks from the coordinator, works on them in a sandbox, submits results.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/cli.ts run",
+    "pair": "tsx src/cli.ts pair",
+    "status": "tsx src/cli.ts status",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aloe/core": "workspace:*",
+    "tsx": "^4.20.0",
+    "zod": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}
