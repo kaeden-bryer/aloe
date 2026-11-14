@@ -5,6 +5,7 @@
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { useProject } from "../../api/hooks";
 import { useInbox } from "../../api/maintainer";
+import { StagingLink } from "../../components/StagingLink";
 import { BriefTab } from "./BriefTab";
 import { DecisionsTab } from "./DecisionsTab";
 import { ImportTab } from "./ImportTab";
@@ -37,6 +38,7 @@ export function MaintainerPage() {
       {p && (
         <div className="maintain-page">
           <h1>{p.emoji} {p.name}</h1>
+          <StagingLink projectId={projectId} compact />
           <p className="page-lede">Teach the steward about your project, approve the work it drafts, and answer what it escalates.</p>
           <div className="maintain-tabs" role="tablist">
             {TABS.map((t) => (

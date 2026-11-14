@@ -26,6 +26,7 @@ import { run, type RunOptions, type RunResult } from "../exec.ts";
 import { applyPatch, diffWorktree, withWorktree } from "../git.ts";
 import { runHiddenTests } from "../hidden-tests.ts";
 import { buildCodePrompt, buildReviewPrompt, parseReviewReply, type ReviewReply } from "../prompt.ts";
+import { effectiveMaxTurns, turnCeiling } from "../turns.ts";
 import { tail } from "./docker.ts";
 import type { AgentProvider, CodeResult, VerifyResult } from "./types.ts";
 
@@ -80,9 +81,14 @@ export class LocalClaudeProvider implements AgentProvider {
     opts.log("WARNING: local-claude runs your own `claude` login with NO sandbox. Demo on your own machine only.");
   }
 
+  /** min(spec.maxTurns, donor ceiling) for both code and review runs. */
+  private turnsFor(task: ClaimedTask): number {
+    return effectiveMaxTurns(task.spec, turnCeiling(this.opts.maxTurns, this.env));
+  }
+
   runCodeTask(task: ClaimedTask, signal: AbortSignal): Promise<CodeResult> {
     return withWorktree(this.opts.aloeHome, task.repoUrl, task.id, signal, async (dir) => {
-      const out = await this.claude(dir, buildCodePrompt(task.spec), EDIT_TOOLS, signal);
+      const out = await this.claude(dir, buildCodePrompt(task.spec), EDIT_TOOLS, signal, this.turnsFor(task));
       return {
         // The patch comes from git, not from anything the model says.
         patch: await diffWorktree(dir),
@@ -108,7 +114,7 @@ export class LocalClaudeProvider implements AgentProvider {
       // A crashed or timed-out review must never turn into an approval: it becomes "unsure".
       let verdict: ReviewReply;
       try {
-        const out = await this.claude(dir, buildReviewPrompt(task.spec, review.patch), READ_TOOLS, signal);
+        const out = await this.claude(dir, buildReviewPrompt(task.spec, review.patch), READ_TOOLS, signal, this.turnsFor(task));
         verdict = parseReviewReply(out.result);
       } catch (err) {
         if (signal.aborted) throw err; // lease lost / Ctrl-C: not a verdict at all
@@ -142,8 +148,8 @@ export class LocalClaudeProvider implements AgentProvider {
     });
   }
 
-  private async claude(cwd: string, prompt: string, tools: string, signal: AbortSignal): Promise<CliResult> {
-    const { timeoutMs = 10 * 60_000, maxTurns = 30 } = this.opts;
+  private async claude(cwd: string, prompt: string, tools: string, signal: AbortSignal, maxTurns: number): Promise<CliResult> {
+    const { timeoutMs = 10 * 60_000 } = this.opts;
 
     // One controller covers all three reasons to kill the child: lease lost /
     // Ctrl-C (the outer signal), a timeout, and too many turns.

@@ -256,6 +256,10 @@ function route(method: string, url: URL, body: unknown): Reply {
     save();
     return ok(decisionFor(p, "resolved", option.label));
   }
+  // Publishing is off in mock mode, so the staging status is always empty.
+  if (method === "GET" && /^\/api\/projects\/[^/]+\/staging$/.test(path)) {
+    return ok({ enabled: false, branch: "aloe/staging", prUrl: null, items: [] });
+  }
   if (method === "POST" && path === "/api/demo/reset") {
     state = freshState();
     save();

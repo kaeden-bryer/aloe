@@ -17,6 +17,7 @@ import {
   Me,
   ProjectDetail,
   ProjectSummary,
+  ResetDemoResponse,
   type CauseId,
   WeeklyEmailSendResponse,
   type DonorSettings,
@@ -92,5 +93,6 @@ export const api = {
   resolveDecision: (id: string, optionId: string, note?: string) =>
     request("POST", `/api/decisions/${encodeURIComponent(id)}/resolve`, Decision, { optionId, note }),
   sendWeeklyEmail: () => request("POST", "/api/me/weekly-email/send", WeeklyEmailSendResponse),
-  resetDemo: () => request("POST", "/api/demo/reset", Ok),
+  // `github: true` also resets the demo fork on GitHub (server refuses unless configured).
+  resetDemo: (github?: boolean) => request("POST", "/api/demo/reset", ResetDemoResponse, github ? { github: true } : undefined),
 };

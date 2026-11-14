@@ -120,6 +120,19 @@ describe("runCodeTask", () => {
       });
     await expect(provider(runner, { maxTurns: 3 }).p.runCodeTask(codeTask(), signal)).rejects.toThrow(/more than 3 turns/);
   });
+
+  it("a task's spec.maxTurns tightens the cap, but never raises it above the donor's", async () => {
+    const runner: ProcessRunner = (_c, _a, opts) =>
+      new Promise((_resolve, reject) => {
+        opts.signal!.addEventListener("abort", () => reject(opts.signal!.reason));
+        for (let i = 0; i < 4; i++) opts.onLine?.('{"type":"assistant","message":{}}');
+      });
+    const base = codeTask();
+    const tight = { ...base, spec: { ...base.spec, maxTurns: 2 } };
+    await expect(provider(runner, { maxTurns: 10 }).p.runCodeTask(tight, signal)).rejects.toThrow(/more than 2 turns/);
+    const loose = { ...base, spec: { ...base.spec, maxTurns: 50 } };
+    await expect(provider(runner, { maxTurns: 3 }).p.runCodeTask(loose, signal)).rejects.toThrow(/more than 3 turns/);
+  });
 });
 
 describe("runVerifyTask", () => {

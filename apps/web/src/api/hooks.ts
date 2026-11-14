@@ -107,8 +107,9 @@ export function useResolveDecision() {
 export function useResetDemo() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.resetDemo,
-    // Everything cached belongs to the old demo state, so drop it all.
-    onSuccess: () => qc.clear(),
+    mutationFn: (github?: boolean) => api.resetDemo(github),
+    // Everything cached belongs to the old demo state, so drop it all. The GitHub variant stays on
+    // the Settings page to show its result, so it refetches in place instead (clear() would unmount it).
+    onSuccess: (_res, github) => (github ? qc.invalidateQueries() : qc.clear()),
   });
 }
