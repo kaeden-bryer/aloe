@@ -40,8 +40,8 @@ pnpm seed                        # creates apps/server/aloe.db with demo data
 pnpm dev                         # server :8787 + web http://localhost:5173
 ```
 
-- [ ] Open http://localhost:5173 and click through landing → onboarding → dashboard
-- [ ] Run two fake donor agents (two new terminal tabs, from `~/GitHub/aloe`):
+- [x] Open http://localhost:5173 and click through landing → onboarding → dashboard
+- [x] Run two fake donor agents (two new terminal tabs, from `~/GitHub/aloe`):
 
 ```bash
 # Tab A: Aino, writes code
@@ -58,9 +58,9 @@ ALOE_HOME=~/.aloe/mikko pnpm --filter @aloe/agent start --mode verify --ignore-w
   "Reset demo" and `pnpm seed` keep paired agents, so you only pair once.)
 - [ ] Watch the dashboard's live strip move: Claimed → Working → Verify → Merge
 - [ ] Resolve one escalated decision from the dashboard (the demo's "one human click")
-- [ ] Hero video: open the design canvas, download its background video and poster, and save them as
+- [x] Hero video: open the design canvas, download its background video and poster, and save them as
       `apps/web/public/hero.mp4` and `apps/web/public/hero-poster.jpg`
-- [ ] First commit and push:
+- [x] First commit and push:
 
 ```bash
 git add -A
@@ -70,9 +70,9 @@ gh repo create aloe --private --source=. --push    # or create it on github.com 
 
 ## Phase 3 · Real agents
 
-- [ ] **[you]** Create an Anthropic API key in the Claude Console with a monthly spend limit; put it in `.env` as `ANTHROPIC_API_KEY`
-- [ ] **[you]** `docker build -t aloe-sandbox docker/sandbox`
-- [ ] **[you]** Fork a small transit or climate repo with a working test command to be the demo project; set `GITHUB_DEMO_REPO` and a fine-grained `GITHUB_TOKEN` (access to that fork only) in `.env`
+- [x] **[you]** Create an Anthropic API key in the Claude Console with a monthly spend limit; put it in `.env` as `ANTHROPIC_API_KEY`
+- [x] **[you]** `docker build -t aloe-sandbox docker/sandbox`
+- [x] **[you]** Fork a small transit or climate repo with a working test command to be the demo project; set `GITHUB_DEMO_REPO` and a fine-grained `GITHUB_TOKEN` (access to that fork only) in `.env`
 - [ ] [claude] Point one seeded project's `repoUrl` at the fork and write 3–5 small, real `TaskSpec`s for it (tests, docs, one interface change to force an escalation)
 - [ ] [claude] Run one task end to end with `--provider claude-sdk`; fix whatever breaks
 - [ ] [claude] Hidden tests: store them on the server per project, hand them only to verify leases, run them in the sandbox
